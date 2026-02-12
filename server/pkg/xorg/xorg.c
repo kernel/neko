@@ -302,12 +302,18 @@ void XGetScreenConfigurations() {
 }
 
 // Inspired by https://github.com/raboof/xrandr/blob/master/xrandr.c
-void XCreateScreenMode(int width, int height, short rate) {
+// width and height are in/out: on return they contain the actual dimensions
+// of the created mode (libxcvt may round width to a multiple of 8).
+void XCreateScreenMode(int *width, int *height, short rate) {
   Display *display = getXDisplay();
   Window root = DefaultRootWindow(display);
 
   // create new mode info
-  XRRModeInfo *mode_info = XCreateScreenModeInfo(width, height, rate);
+  XRRModeInfo *mode_info = XCreateScreenModeInfo(*width, *height, rate);
+
+  // write back the actual dimensions that were created
+  *width = mode_info->width;
+  *height = mode_info->height;
 
   // create new mode
   RRMode mode = XRRCreateMode(display, root, mode_info);
@@ -325,15 +331,18 @@ void XCreateScreenMode(int width, int height, short rate) {
 
 // Inspired by https://fossies.org/linux/xwayland/hw/xwayland/xwayland-cvt.c
 XRRModeInfo *XCreateScreenModeInfo(int hdisplay, int vdisplay, short vrefresh) {
-  char name[128];
-  snprintf(name, sizeof name, "%dx%d_%d", hdisplay, vdisplay, vrefresh);
-  XRRModeInfo *modeinfo = XRRAllocModeInfo(name, strlen(name));
-
 #ifdef _LIBCVT_H_
   struct libxcvt_mode_info *mode_info;
 
   // get screen mode from libxcvt, if available
+  // NOTE: libxcvt may round hdisplay up to a multiple of 8 (CVT convention).
+  // We use the actual output dimensions for both the mode name and geometry
+  // so that they are consistent.
   mode_info = libxcvt_gen_mode_info(hdisplay, vdisplay, vrefresh, false, false);
+
+  char name[128];
+  snprintf(name, sizeof name, "%dx%d_%d", mode_info->hdisplay, mode_info->vdisplay, vrefresh);
+  XRRModeInfo *modeinfo = XRRAllocModeInfo(name, strlen(name));
 
   modeinfo->width      = mode_info->hdisplay;
   modeinfo->height     = mode_info->vdisplay;
@@ -349,6 +358,10 @@ XRRModeInfo *XCreateScreenModeInfo(int hdisplay, int vdisplay, short vrefresh) {
   free(mode_info);
 #else
   // fallback to a simple mode without refresh rate
+  char name[128];
+  snprintf(name, sizeof name, "%dx%d_%d", hdisplay, vdisplay, vrefresh);
+  XRRModeInfo *modeinfo = XRRAllocModeInfo(name, strlen(name));
+
   modeinfo->width = hdisplay;
   modeinfo->height = vdisplay;
 #endif
