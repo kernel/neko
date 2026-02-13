@@ -212,19 +212,7 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 	// try to set the screen configuration with the exact requested dimensions
 	status := C.XSetScreenConfiguration(c_width, c_height, c_rate)
 
-	// if the exact dimensions don't match an existing mode, the width may not
-	// be a multiple of 8 (Xorg/CVT convention). Try rounding up to the nearest
-	// multiple of 8 before creating a new mode, since predefined modelines in
-	// xorg.conf typically use aligned widths (e.g. 390 -> 392).
-	if status != C.RRSetConfigSuccess {
-		alignedWidth := roundUpTo8(s.Width)
-		if alignedWidth != s.Width {
-			c_width = C.int(alignedWidth)
-			status = C.XSetScreenConfiguration(c_width, c_height, c_rate)
-		}
-	}
-
-	// if still no match, dynamically create a new mode via libxcvt
+	// if no existing mode matches, dynamically create one via libxcvt
 	if status != C.RRSetConfigSuccess {
 		C.XCreateScreenMode(&c_width, &c_height, c_rate)
 
@@ -249,14 +237,6 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 	}
 
 	return s, err
-}
-
-// roundUpTo8 rounds n up to the nearest multiple of 8.
-func roundUpTo8(n int) int {
-	if r := n % 8; r != 0 {
-		return n + (8 - r)
-	}
-	return n
 }
 
 func GetScreenSize() types.ScreenSize {
