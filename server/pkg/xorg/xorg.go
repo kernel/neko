@@ -201,9 +201,6 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// round width to 8, because of Xorg
-	s.Width = s.Width - (s.Width % 8)
-
 	// if rate is 0, set it to 60
 	if s.Rate == 0 {
 		s.Rate = 60
@@ -212,15 +209,20 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 	// convert variables to C types
 	c_width, c_height, c_rate := C.int(s.Width), C.int(s.Height), C.short(s.Rate)
 
-	// if screen configuration already exists, just set it
+	// try to set the screen configuration with the exact requested dimensions
 	status := C.XSetScreenConfiguration(c_width, c_height, c_rate)
+
+	// if no existing mode matches, dynamically create one via libxcvt
 	if status != C.RRSetConfigSuccess {
-		// create new screen configuration
-		C.XCreateScreenMode(c_width, c_height, c_rate)
+		C.XCreateScreenMode(&c_width, &c_height, c_rate)
 
 		// screen configuration should exist now, set it
 		status = C.XSetScreenConfiguration(c_width, c_height, c_rate)
 	}
+
+	// update s with the actual dimensions that were set
+	s.Width = int(c_width)
+	s.Height = int(c_height)
 
 	var err error
 
