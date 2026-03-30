@@ -3,7 +3,6 @@ package webrtc
 import (
 	"bytes"
 	"encoding/binary"
-	"strconv"
 
 	"github.com/m1k1o/neko/server/pkg/types"
 
@@ -33,6 +32,13 @@ type PayloadScroll struct {
 	PayloadHeader
 	X int16
 	Y int16
+}
+
+type PayloadScrollWithCtrl struct {
+	PayloadHeader
+	DeltaX     int16
+	DeltaY     int16
+	ControlKey uint8
 }
 
 type PayloadKey struct {
@@ -72,18 +78,32 @@ func (manager *WebRTCManagerCtx) handleLegacy(
 
 		manager.desktop.Move(int(payload.X), int(payload.Y))
 	case OP_SCROLL:
-		payload := &PayloadScroll{}
-		if err := binary.Read(buffer, binary.LittleEndian, payload); err != nil {
-			return err
+		if header.Length == 5 {
+			payload := &PayloadScrollWithCtrl{}
+			if err := binary.Read(buffer, binary.LittleEndian, payload); err != nil {
+				return err
+			}
+
+			logger.Trace().
+				Int16("deltaX", payload.DeltaX).
+				Int16("deltaY", payload.DeltaY).
+				Bool("controlKey", payload.ControlKey != 0).
+				Msg("scroll")
+
+			manager.desktop.Scroll(int(payload.DeltaX), int(payload.DeltaY), payload.ControlKey != 0)
+		} else {
+			payload := &PayloadScroll{}
+			if err := binary.Read(buffer, binary.LittleEndian, payload); err != nil {
+				return err
+			}
+
+			logger.Trace().
+				Int16("x", payload.X).
+				Int16("y", payload.Y).
+				Msg("scroll (legacy)")
+
+			manager.desktop.Scroll(int(payload.X), int(payload.Y), false)
 		}
-
-		logger.
-			Trace().
-			Str("x", strconv.Itoa(int(payload.X))).
-			Str("y", strconv.Itoa(int(payload.Y))).
-			Msg("scroll")
-
-		manager.desktop.Scroll(int(payload.X), int(payload.Y), false)
 	case OP_KEY_DOWN:
 		payload := &PayloadKey{}
 		if err := binary.Read(buffer, binary.LittleEndian, payload); err != nil {

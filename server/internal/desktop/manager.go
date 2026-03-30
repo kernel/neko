@@ -11,6 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/m1k1o/neko/server/internal/config"
+	"github.com/m1k1o/neko/server/pkg/cdpscroll"
 	"github.com/m1k1o/neko/server/pkg/types"
 	"github.com/m1k1o/neko/server/pkg/xevent"
 	"github.com/m1k1o/neko/server/pkg/xinput"
@@ -27,6 +28,7 @@ type DesktopManagerCtx struct {
 	config     *config.Desktop
 	screenSize types.ScreenSize // cached screen size
 	input      xinput.Driver
+	cdpScroll  *cdpscroll.Client
 
 	// Clipboard process holding the most recent clipboard data.
 	// It must remain running to allow pasting clipboard data.
@@ -42,6 +44,12 @@ func New(config *config.Desktop) *DesktopManagerCtx {
 		input = xinput.NewDummy()
 	}
 
+	var cdp *cdpscroll.Client
+	if config.CDPScrollURL != "" {
+		cdp = cdpscroll.New(config.CDPScrollURL)
+		log.Info().Str("url", config.CDPScrollURL).Msg("CDP scroll enabled")
+	}
+
 	return &DesktopManagerCtx{
 		logger:     log.With().Str("module", "desktop").Logger(),
 		shutdown:   make(chan struct{}),
@@ -49,6 +57,7 @@ func New(config *config.Desktop) *DesktopManagerCtx {
 		config:     config,
 		screenSize: config.ScreenSize,
 		input:      input,
+		cdpScroll:  cdp,
 	}
 }
 
@@ -138,6 +147,10 @@ func (manager *DesktopManagerCtx) Shutdown() error {
 	manager.logger.Info().Msgf("shutdown")
 
 	close(manager.shutdown)
+
+	if manager.cdpScroll != nil {
+		manager.cdpScroll.Close()
+	}
 
 	manager.replaceClipboardCommand(nil)
 	manager.wg.Wait()

@@ -19,6 +19,19 @@ func (manager *DesktopManagerCtx) GetCursorPosition() (int, int) {
 }
 
 func (manager *DesktopManagerCtx) Scroll(deltaX, deltaY int, controlKey bool) {
+	if manager.cdpScroll != nil {
+		curX, curY := xorg.GetCursorPosition()
+		modifiers := 0
+		if controlKey {
+			modifiers = 2 // CDP Ctrl modifier bitmask
+		}
+		err := manager.cdpScroll.DispatchScroll(curX, curY, float64(deltaX), float64(deltaY), modifiers)
+		if err != nil {
+			manager.logger.Warn().Err(err).Msg("CDP scroll failed, falling back to X11")
+			xorg.Scroll(deltaX, deltaY, controlKey)
+		}
+		return
+	}
 	xorg.Scroll(deltaX, deltaY, controlKey)
 }
 
