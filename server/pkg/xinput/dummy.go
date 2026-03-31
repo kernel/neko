@@ -29,3 +29,7 @@ func (d *dummy) TouchUpdate(touchId uint32, x, y int, pressure uint8) error {
 func (d *dummy) TouchEnd(touchId uint32, x, y int, pressure uint8) error {
 	return nil
 }
+
+func (d *dummy) Scroll(deltaX, deltaY int32) error {
+	return nil
+}
