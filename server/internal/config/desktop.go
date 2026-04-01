@@ -23,8 +23,6 @@ type Desktop struct {
 	Unminimize        bool
 	UploadDrop        bool
 	FileChooserDialog bool
-
-	CDPScrollURL string
 }
 
 func (Desktop) Init(cmd *cobra.Command) error {
@@ -60,11 +58,6 @@ func (Desktop) Init(cmd *cobra.Command) error {
 
 	cmd.PersistentFlags().Bool("desktop.file_chooser_dialog", false, "whether to handle file chooser dialog externally")
 	if err := viper.BindPFlag("desktop.file_chooser_dialog", cmd.PersistentFlags().Lookup("desktop.file_chooser_dialog")); err != nil {
-		return err
-	}
-
-	cmd.PersistentFlags().String("desktop.cdp_scroll_url", "", "Chromium devtools HTTP base URL for pixel-precise scroll via CDP (e.g. http://127.0.0.1:9223)")
-	if err := viper.BindPFlag("desktop.cdp_scroll_url", cmd.PersistentFlags().Lookup("desktop.cdp_scroll_url")); err != nil {
 		return err
 	}
 
@@ -114,7 +107,6 @@ func (s *Desktop) Set() {
 	s.Unminimize = viper.GetBool("desktop.unminimize")
 	s.UploadDrop = viper.GetBool("desktop.upload_drop")
 	s.FileChooserDialog = viper.GetBool("desktop.file_chooser_dialog")
-	s.CDPScrollURL = viper.GetString("desktop.cdp_scroll_url")
 }
 
 func (s *Desktop) SetV2() {
