@@ -1,6 +1,11 @@
 package xinput
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var errNotConnected = errors.New("xinput driver not connected")
 
 type dummy struct{}
 
@@ -31,5 +36,5 @@ func (d *dummy) TouchEnd(touchId uint32, x, y int, pressure uint8) error {
 }
 
 func (d *dummy) Scroll(deltaX, deltaY int32) error {
-	return nil
+	return errNotConnected
 }
