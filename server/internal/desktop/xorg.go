@@ -19,40 +19,15 @@ func (manager *DesktopManagerCtx) GetCursorPosition() (int, int) {
 }
 
 func (manager *DesktopManagerCtx) Scroll(deltaX, deltaY int, controlKey bool) {
-	if manager.config.UseInputDriver {
-		// Route through the xf86-input-neko driver for native XI2 smooth scroll.
-		// Convert pixel deltas to scroll valuator units (120 = one notch ≈ 3 lines).
-		// The scaling factor maps ~100 CSS pixels to one notch.
-		const pixelsPerNotch = 100.0
-		const scrollIncrement = 120.0
-		sx := int32(float64(deltaX) * scrollIncrement / pixelsPerNotch)
-		sy := int32(float64(deltaY) * scrollIncrement / pixelsPerNotch)
-		if sx == 0 && sy == 0 && (deltaX != 0 || deltaY != 0) {
-			// Preserve sub-pixel deltas: ensure at least 1 unit of scroll
-			if deltaX != 0 {
-				sx = 1
-				if deltaX < 0 {
-					sx = -1
-				}
-			}
-			if deltaY != 0 {
-				sy = 1
-				if deltaY < 0 {
-					sy = -1
-				}
-			}
-		}
-		if controlKey {
-			xorg.SetKeyboardModifier(xorg.KbdModControl, true)
-			defer xorg.SetKeyboardModifier(xorg.KbdModControl, false)
-		}
-		if err := manager.input.Scroll(sx, sy); err != nil {
-			manager.logger.Warn().Err(err).Msg("xinput scroll failed, falling back to XTest")
-			xorg.Scroll(deltaX, deltaY, controlKey)
-		}
-		return
+	if controlKey {
+		xorg.SetKeyboardModifier(xorg.KbdModControl, true)
+		defer xorg.SetKeyboardModifier(xorg.KbdModControl, false)
 	}
-	xorg.Scroll(deltaX, deltaY, controlKey)
+
+	if err := manager.input.Scroll(int32(deltaX), int32(deltaY)); err != nil {
+		manager.logger.Warn().Err(err).Msg("xinput scroll failed, falling back to XTest")
+		xorg.Scroll(deltaX, deltaY, false)
+	}
 }
 
 func (manager *DesktopManagerCtx) ButtonDown(code uint32) error {

@@ -478,7 +478,6 @@ func (manager *WebRTCManagerCtx) CreatePeer(session types.Session) (*webrtc.Sess
 		//
 
 		if viper.GetBool("legacy") {
-			// handle legacy data channel
 			dc.OnMessage(func(message webrtc.DataChannelMessage) {
 				if err := manager.handleLegacy(logger, message.Data, session); err != nil {
 					logger.Err(err).Msg("data handle failed")

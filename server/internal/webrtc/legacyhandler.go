@@ -100,7 +100,7 @@ func (manager *WebRTCManagerCtx) handleLegacy(
 			logger.Trace().
 				Int16("x", payload.X).
 				Int16("y", payload.Y).
-				Msg("scroll (legacy)")
+				Msg("scroll")
 
 			manager.desktop.Scroll(int(payload.X), int(payload.Y), false)
 		}

@@ -39,6 +39,7 @@ type DesktopManagerCtx struct {
 func New(config *config.Desktop) *DesktopManagerCtx {
 	var input xinput.Driver
 	if config.UseInputDriver {
+		log.Info().Str("socket", config.InputSocket).Msg("using xinput driver for scroll")
 		input = xinput.NewDriver(config.InputSocket)
 	} else {
 		input = xinput.NewDummy()
