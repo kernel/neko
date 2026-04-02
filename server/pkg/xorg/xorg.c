@@ -35,16 +35,16 @@ void XScroll(int deltaX, int deltaY) {
 
   int ydir;
   if (deltaY > 0) {
-    ydir = 4; // button 4 is up
+    ydir = 5; // positive = scroll down = button 5
   } else {
-    ydir = 5; // button 5 is down
+    ydir = 4; // negative = scroll up = button 4
   }
 
   int xdir;
   if (deltaX > 0) {
-    xdir = 6; // button 6 is right
+    xdir = 7; // positive = scroll right = button 7
   } else {
-    xdir = 7; // button 7 is left
+    xdir = 6; // negative = scroll left = button 6
   }
 
   for (int i = 0; i < abs(deltaY); i++) {

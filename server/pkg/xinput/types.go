@@ -12,6 +12,7 @@ const (
 	XI_TouchBegin  = 18
 	XI_TouchUpdate = 19
 	XI_TouchEnd    = 20
+	NEKO_SCROLL    = 0x80
 )
 
 type Message struct {
@@ -58,4 +59,7 @@ type Driver interface {
 	TouchBegin(touchId uint32, x, y int, pressure uint8) error
 	TouchUpdate(touchId uint32, x, y int, pressure uint8) error
 	TouchEnd(touchId uint32, x, y int, pressure uint8) error
+	// scroll via XI2 scroll valuators in the xf86-input-neko driver.
+	// deltaX/deltaY are in scroll units (120 = one notch).
+	Scroll(deltaX, deltaY int32) error
 }

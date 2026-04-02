@@ -19,7 +19,21 @@ func (manager *DesktopManagerCtx) GetCursorPosition() (int, int) {
 }
 
 func (manager *DesktopManagerCtx) Scroll(deltaX, deltaY int, controlKey bool) {
-	xorg.Scroll(deltaX, deltaY, controlKey)
+	if manager.config.UseInputDriver {
+		// XI2.1 smooth scrolling via xf86-input-neko: set modifier before the
+		// driver posts the motion event so the X server sees Ctrl held.
+		if controlKey {
+			xorg.SetKeyboardModifier(xorg.KbdModControl, true)
+			defer xorg.SetKeyboardModifier(xorg.KbdModControl, false)
+		}
+		if err := manager.input.Scroll(int32(deltaX), int32(deltaY)); err != nil {
+			manager.logger.Warn().Err(err).Msg("xinput scroll failed, falling back to XTest")
+			xorg.Scroll(deltaX, deltaY, false)
+		}
+	} else {
+		// XTest fallback — handles controlKey atomically under a single X11 lock
+		xorg.Scroll(deltaX, deltaY, controlKey)
+	}
 }
 
 func (manager *DesktopManagerCtx) ButtonDown(code uint32) error {

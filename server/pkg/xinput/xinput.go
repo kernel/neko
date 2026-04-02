@@ -120,3 +120,16 @@ func (d *driver) TouchEnd(touchId uint32, x, y int, pressure uint8) error {
 	_, err := d.conn.Write(msg.Pack())
 	return err
 }
+
+func (d *driver) Scroll(deltaX, deltaY int32) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	msg := Message{
+		_type: NEKO_SCROLL,
+		x:     deltaX,
+		y:     deltaY,
+	}
+	_, err := d.conn.Write(msg.Pack())
+	return err
+}
