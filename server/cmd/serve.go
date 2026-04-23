@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/m1k1o/neko/server/internal/api"
+	"github.com/m1k1o/neko/server/internal/benchmarks"
 	"github.com/m1k1o/neko/server/internal/capture"
 	"github.com/m1k1o/neko/server/internal/config"
 	"github.com/m1k1o/neko/server/internal/desktop"
@@ -176,11 +177,19 @@ func (c *serve) Start(cmd *cobra.Command) {
 	)
 	c.managers.webSocket.Start()
 
+	// Create benchmark collector with target metrics
+	// Typical WebRTC targets: 30 FPS, 2500 kbps
+	benchmarkCollector := benchmarks.NewWebRTCStatsCollector(30.0, 2500.0)
+
+	// Set the benchmark collector in WebRTC manager
+	c.managers.webRTC.SetBenchmarkCollector(benchmarkCollector)
+
 	c.managers.api = api.New(
 		c.managers.session,
 		c.managers.member,
 		c.managers.desktop,
 		c.managers.capture,
+		benchmarkCollector,
 	)
 
 	c.managers.plugins = plugins.New(

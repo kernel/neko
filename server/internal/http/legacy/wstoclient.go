@@ -753,6 +753,10 @@ func (s *session) wsToClient(msg []byte) error {
 	case event.SYSTEM_HEARTBEAT:
 		return nil
 
+	case event.BENCHMARK_WEBRTC_STATS:
+		// Ignore benchmark events - only relevant for new client, not legacy
+		return nil
+
 	default:
 		return fmt.Errorf("unknown event type: %s", data.Event)
 	}

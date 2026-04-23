@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 
+	"github.com/m1k1o/neko/server/internal/benchmarks"
 	"github.com/m1k1o/neko/server/internal/config"
 	"github.com/m1k1o/neko/server/internal/webrtc/cursor"
 	"github.com/m1k1o/neko/server/internal/webrtc/pionlog"
@@ -106,6 +108,10 @@ type WebRTCManagerCtx struct {
 	udpMux ice.UDPMux
 
 	camStop, micStop *func()
+
+	// Benchmark collector for performance metrics
+	benchmarkCollector *benchmarks.WebRTCStatsCollector
+	benchmarkMu        sync.RWMutex
 }
 
 func (manager *WebRTCManagerCtx) Start() {
@@ -167,6 +173,88 @@ func (manager *WebRTCManagerCtx) Shutdown() error {
 
 func (manager *WebRTCManagerCtx) ICEServers() []types.ICEServer {
 	return manager.config.ICEServersFrontend
+}
+
+// SetBenchmarkCollector sets the benchmark collector for WebRTC stats
+func (manager *WebRTCManagerCtx) SetBenchmarkCollector(collector *benchmarks.WebRTCStatsCollector) {
+	manager.benchmarkMu.Lock()
+	defer manager.benchmarkMu.Unlock()
+	manager.benchmarkCollector = collector
+
+	// Start continuous stats export in background
+	if collector != nil {
+		go manager.continuousStatsExport(collector)
+	}
+}
+
+// continuousStatsExport continuously collects and exports WebRTC stats
+// Runs every 10 seconds to keep stats fresh in /tmp
+func (manager *WebRTCManagerCtx) continuousStatsExport(collector *benchmarks.WebRTCStatsCollector) {
+	// Wait a bit for initial setup
+	time.Sleep(3 * time.Second)
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	manager.logger.Info().Msg("starting continuous WebRTC stats export")
+
+	// Do initial collection
+	manager.collectAndExport(collector)
+
+	// Then continue periodically
+	for range ticker.C {
+		manager.collectAndExport(collector)
+	}
+}
+
+// collectAndExport performs a single collection and export cycle
+func (manager *WebRTCManagerCtx) collectAndExport(collector *benchmarks.WebRTCStatsCollector) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// Collect stats over 10-second window
+	stats, err := collector.CollectStats(ctx, 10*time.Second)
+	if err != nil {
+		manager.logger.Warn().Err(err).Msg("failed to collect WebRTC stats")
+		return
+	}
+
+	// Export to file
+	if err := collector.ExportStats(stats); err != nil {
+		manager.logger.Warn().Err(err).Msg("failed to export WebRTC stats")
+		return
+	}
+
+	manager.logger.Debug().
+		Float64("fps", stats.FrameRateFPS.Achieved).
+		Int("viewers", stats.ConcurrentViewers).
+		Msg("WebRTC stats exported")
+}
+
+// TriggerBenchmarkCollection - kept for interface compatibility but not used
+func (manager *WebRTCManagerCtx) TriggerBenchmarkCollection(ctx context.Context) error {
+	// Not used in continuous export mode, but kept for interface compatibility
+	return nil
+}
+
+// registerPeerConnection registers a peer connection with the benchmark collector
+func (manager *WebRTCManagerCtx) registerPeerConnection(pc *webrtc.PeerConnection) {
+	manager.benchmarkMu.RLock()
+	defer manager.benchmarkMu.RUnlock()
+
+	if manager.benchmarkCollector != nil {
+		manager.benchmarkCollector.RegisterConnection(pc)
+	}
+}
+
+// unregisterPeerConnection unregisters a peer connection from the benchmark collector
+func (manager *WebRTCManagerCtx) unregisterPeerConnection(pc *webrtc.PeerConnection) {
+	manager.benchmarkMu.RLock()
+	defer manager.benchmarkMu.RUnlock()
+
+	if manager.benchmarkCollector != nil {
+		manager.benchmarkCollector.UnregisterConnection(pc)
+	}
 }
 
 func (manager *WebRTCManagerCtx) newPeerConnection(logger zerolog.Logger, codecs []codec.RTPCodec) (*webrtc.PeerConnection, cc.BandwidthEstimator, error) {
@@ -291,6 +379,9 @@ func (manager *WebRTCManagerCtx) CreatePeer(session types.Session) (*webrtc.Sess
 		return nil, nil, err
 	}
 
+	// Register connection with benchmark collector
+	manager.registerPeerConnection(connection)
+
 	// asynchronously send local ICE Candidates
 	if manager.config.ICETrickle {
 		connection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
@@ -344,6 +435,7 @@ func (manager *WebRTCManagerCtx) CreatePeer(session types.Session) (*webrtc.Sess
 		logger:     logger,
 		session:    session,
 		metrics:    metrics,
+		manager:    manager,
 		connection: connection,
 		// bandwidth estimator
 		estimator: estimator,
