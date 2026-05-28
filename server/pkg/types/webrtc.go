@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"errors"
 
 	"github.com/pion/webrtc/v3"
@@ -67,4 +68,7 @@ type WebRTCManager interface {
 
 	CreatePeer(session Session) (*webrtc.SessionDescription, WebRTCPeer, error)
 	SetCursorPosition(x, y int)
+
+	// Benchmark collection
+	TriggerBenchmarkCollection(ctx context.Context) error
 }
