@@ -10,14 +10,16 @@ import configOptions from './help.json';
 
 This section describes how to configure the desktop environment inside neko.
 
-Neko uses the [X Server](https://www.x.org/archive/X11R7.6/doc/man/man1/Xserver.1.xhtml) as the display server with [Openbox](http://openbox.org/wiki/Main_Page) as the default window manager. For audio, [PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/) is used.
+Neko uses the [X Server](https://www.x.org/archive/X11R7.6/doc/man/man1/Xserver.1.xhtml) as the display server with [Openbox](http://openbox.org/wiki/Main_Page) as the default window manager. For audio, [PulseAudio](https://www.freedesktop.org/wiki/Software/PulseAudio/) is used. Set <Def id="wayland" /> to use a Wayland compositor and `/dev/uinput` for desktop input instead.
 
 <ConfigurationTab options={configOptions} filter={[
   'desktop.display',
+  'desktop.wayland',
   'desktop.screen'
 ]} comments={false} />
 
 - <Def id="display" /> refers to the X server that is running on the system. If it is not specified, the environment variable `DISPLAY` is used. The same display is referred to in the [Capture](capture#video.display) configuration to capture the screen. In most cases, we want to use the same display for both.
+- <Def id="wayland" /> disables X11 desktop initialization and injects pointer and keyboard events through a `/dev/uinput` virtual device. The container must have access to `/dev/uinput`; the compositor must accept libinput devices.
 - <Def id="screen" /> refers to the screen resolution and refresh rate. The format is `<width>x<height>@<refresh rate>`. If not specified, the default is `1280x720@30`.
 
 :::tip

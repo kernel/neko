@@ -263,6 +263,15 @@
   {
     "key": [
       "desktop",
+      "wayland"
+    ],
+    "type": "boolean",
+    "defaultValue": false,
+    "description": "use Wayland desktop input and screen management"
+  },
+  {
+    "key": [
+      "desktop",
       "file_chooser_dialog"
     ],
     "type": "boolean",

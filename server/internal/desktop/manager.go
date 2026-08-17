@@ -20,13 +20,14 @@ import (
 var mu = sync.Mutex{}
 
 type DesktopManagerCtx struct {
-	logger     zerolog.Logger
-	wg         sync.WaitGroup
-	shutdown   chan struct{}
-	emmiter    events.EventEmmiter
-	config     *config.Desktop
-	screenSize types.ScreenSize // cached screen size
-	input      xinput.Driver
+	logger       zerolog.Logger
+	wg           sync.WaitGroup
+	shutdown     chan struct{}
+	emmiter      events.EventEmmiter
+	config       *config.Desktop
+	screenSize   types.ScreenSize // cached screen size
+	input        xinput.Driver
+	waylandInput *waylandInput
 
 	// Clipboard process holding the most recent clipboard data.
 	// It must remain running to allow pasting clipboard data.
@@ -54,6 +55,16 @@ func New(config *config.Desktop) *DesktopManagerCtx {
 }
 
 func (manager *DesktopManagerCtx) Start() {
+	if manager.config.Wayland {
+		input, err := newWaylandInput(manager.screenSize.Width, manager.screenSize.Height)
+		if err != nil {
+			manager.logger.Panic().Err(err).Msg("unable to create Wayland input device")
+		}
+		manager.waylandInput = input
+		manager.logger.Info().Str("screen_size", manager.screenSize.String()).Msg("using Wayland desktop backend")
+		return
+	}
+
 	if xorg.DisplayOpen(manager.config.Display) {
 		manager.logger.Panic().Str("display", manager.config.Display).Msg("unable to open display")
 	}
@@ -139,6 +150,11 @@ func (manager *DesktopManagerCtx) Shutdown() error {
 	manager.logger.Info().Msgf("shutdown")
 
 	close(manager.shutdown)
+	if manager.waylandInput != nil {
+		manager.waylandInput.close()
+		manager.waylandInput = nil
+		return nil
+	}
 
 	manager.replaceClipboardCommand(nil)
 	manager.wg.Wait()
