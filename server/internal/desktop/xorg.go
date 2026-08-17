@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"fmt"
 	"image"
 	"os/exec"
 	"regexp"
@@ -22,7 +23,7 @@ func (manager *DesktopManagerCtx) Move(x, y int) {
 
 func (manager *DesktopManagerCtx) GetCursorPosition() (int, int) {
 	if manager.waylandInput != nil {
-		return manager.waylandInput.cursorX, manager.waylandInput.cursorY
+		return manager.waylandInput.position()
 	}
 	return xorg.GetCursorPosition()
 }
@@ -153,6 +154,14 @@ func (manager *DesktopManagerCtx) ScreenConfigurations() []types.ScreenSize {
 
 func (manager *DesktopManagerCtx) SetScreenSize(screenSize types.ScreenSize) (types.ScreenSize, error) {
 	if manager.waylandInput != nil {
+		if manager.config.WaylandResizeCommand == "" || manager.config.WaylandOutput == "" {
+			return manager.screenSize, fmt.Errorf("Wayland output resize is not configured")
+		}
+		resize := fmt.Sprintf("%dx%d", screenSize.Width, screenSize.Height)
+		if err := exec.Command(manager.config.WaylandResizeCommand, "--output", manager.config.WaylandOutput, "--mode", resize).Run(); err != nil {
+			return manager.screenSize, fmt.Errorf("resize Wayland output: %w", err)
+		}
+
 		input, err := newWaylandInput(screenSize.Width, screenSize.Height)
 		if err != nil {
 			return manager.screenSize, err

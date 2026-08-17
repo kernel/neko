@@ -15,11 +15,15 @@ Neko uses the [X Server](https://www.x.org/archive/X11R7.6/doc/man/man1/Xserver.
 <ConfigurationTab options={configOptions} filter={[
   'desktop.display',
   'desktop.wayland',
+  'desktop.wayland.output',
+  'desktop.wayland.resize_command',
   'desktop.screen'
 ]} comments={false} />
 
 - <Def id="display" /> refers to the X server that is running on the system. If it is not specified, the environment variable `DISPLAY` is used. The same display is referred to in the [Capture](capture#video.display) configuration to capture the screen. In most cases, we want to use the same display for both.
 - <Def id="wayland" /> disables X11 desktop initialization and injects pointer and keyboard events through a `/dev/uinput` virtual device. The container must have access to `/dev/uinput`; the compositor must accept libinput devices.
+- <Def id="wayland.output" /> is the compositor output name passed to the resize command. The default `HEADLESS-1` matches the wlroots headless backend.
+- <Def id="wayland.resize_command" /> is the executable used to resize the output. It must accept `--output <name> --mode <width>x<height>`, as `wlr-randr` does.
 - <Def id="screen" /> refers to the screen resolution and refresh rate. The format is `<width>x<height>@<refresh rate>`. If not specified, the default is `1280x720@30`.
 
 :::tip

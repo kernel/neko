@@ -272,6 +272,26 @@
   {
     "key": [
       "desktop",
+      "wayland",
+      "output"
+    ],
+    "type": "string",
+    "defaultValue": "HEADLESS-1",
+    "description": "Wayland output name used for resizing"
+  },
+  {
+    "key": [
+      "desktop",
+      "wayland",
+      "resize_command"
+    ],
+    "type": "string",
+    "defaultValue": "wlr-randr",
+    "description": "Wayland output resize executable"
+  },
+  {
+    "key": [
+      "desktop",
       "file_chooser_dialog"
     ],
     "type": "boolean",

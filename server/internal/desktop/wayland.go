@@ -169,6 +169,12 @@ func (input *waylandInput) sync() error {
 	return input.emit(evSyn, 0, 0)
 }
 
+func (input *waylandInput) position() (int, int) {
+	input.mu.Lock()
+	defer input.mu.Unlock()
+	return input.cursorX, input.cursorY
+}
+
 func (input *waylandInput) move(x, y int) error {
 	input.mu.Lock()
 	defer input.mu.Unlock()
