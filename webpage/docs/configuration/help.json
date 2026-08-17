@@ -168,6 +168,26 @@
     "key": [
       "capture",
       "video",
+      "wayland"
+    ],
+    "type": "boolean",
+    "defaultValue": false,
+    "description": "capture a Wayland compositor output"
+  },
+  {
+    "key": [
+      "capture",
+      "video",
+      "wayland_recorder"
+    ],
+    "type": "string",
+    "defaultValue": "wf-recorder",
+    "description": "Wayland screencopy recorder executable"
+  },
+  {
+    "key": [
+      "capture",
+      "video",
       "ids"
     ],
     "type": "strings",

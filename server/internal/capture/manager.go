@@ -39,6 +39,9 @@ func New(desktop types.DesktopManager, config *config.Capture) *CaptureManagerCt
 
 		createPipeline := func() (string, error) {
 			if pipelineConf.GstPipeline != "" {
+				if config.Wayland {
+					return "", errors.New("custom video pipelines are not supported with Wayland capture")
+				}
 				// replace {display} with valid display
 				return strings.Replace(pipelineConf.GstPipeline, "{display}", config.Display, 1), nil
 			}
@@ -47,6 +50,18 @@ func New(desktop types.DesktopManager, config *config.Capture) *CaptureManagerCt
 			pipeline, err := pipelineConf.GetPipeline(screen)
 			if err != nil {
 				return "", err
+			}
+
+			if config.Wayland {
+				fps := screen.Rate
+				if fps <= 0 {
+					fps = 25
+				}
+				return fmt.Sprintf(
+					"appsrc name=appsrc is-live=true format=time do-timestamp=true "+
+						"caps=video/x-raw,format=BGRx,width=%d,height=%d,framerate=%d/1 "+
+						"%s ! appsink name=appsink", screen.Width, screen.Height, fps, pipeline,
+				), nil
 			}
 
 			return fmt.Sprintf(
@@ -69,7 +84,13 @@ func New(desktop types.DesktopManager, config *config.Capture) *CaptureManagerCt
 			Msg("syntax check for video stream pipeline passed")
 
 		// append to videos
-		videos[video_id] = streamSinkNew(config.VideoCodec, createPipeline, video_id)
+		video := streamSinkNew(config.VideoCodec, createPipeline, video_id)
+		if config.Wayland {
+			video.SetFrameSourceFactory(func() (frameSource, error) {
+				return newWaylandFrameSource(config.WaylandRecorder, desktop.GetScreenSize()), nil
+			})
+		}
+		videos[video_id] = video
 	}
 
 	return &CaptureManagerCtx{

@@ -32,10 +32,12 @@ type StreamSinkManagerCtx struct {
 	mu     sync.Mutex
 	wg     sync.WaitGroup
 
-	codec      codec.RTPCodec
-	pipeline   gst.Pipeline
-	pipelineMu sync.Mutex
-	pipelineFn func() (string, error)
+	codec         codec.RTPCodec
+	pipeline      gst.Pipeline
+	pipelineMu    sync.Mutex
+	pipelineFn    func() (string, error)
+	frameSourceFn func() (frameSource, error)
+	frameSource   frameSource
 
 	listeners   map[uintptr]types.SampleListener
 	listenersKf map[uintptr]types.SampleListener // keyframe lobby
@@ -140,6 +142,10 @@ func (manager *StreamSinkManagerCtx) shutdown() {
 
 func (manager *StreamSinkManagerCtx) ID() string {
 	return manager.id
+}
+
+func (manager *StreamSinkManagerCtx) SetFrameSourceFactory(factory func() (frameSource, error)) {
+	manager.frameSourceFn = factory
 }
 
 func (manager *StreamSinkManagerCtx) Bitrate() uint64 {
@@ -325,8 +331,26 @@ func (manager *StreamSinkManagerCtx) CreatePipeline() error {
 		return err
 	}
 
+	if manager.frameSourceFn != nil {
+		manager.frameSource, err = manager.frameSourceFn()
+		if err != nil {
+			manager.pipeline.Destroy()
+			manager.pipeline = nil
+			return err
+		}
+		manager.pipeline.AttachAppsrc("appsrc")
+	}
 	manager.pipeline.AttachAppsink("appsink")
 	manager.pipeline.Play()
+
+	if manager.frameSource != nil {
+		if err := manager.frameSource.Start(manager.pipeline.Push); err != nil {
+			manager.pipeline.Destroy()
+			manager.pipeline = nil
+			manager.frameSource = nil
+			return err
+		}
+	}
 
 	manager.wg.Add(1)
 	pipeline := manager.pipeline
@@ -405,6 +429,10 @@ func (manager *StreamSinkManagerCtx) DestroyPipeline() {
 		return
 	}
 
+	if manager.frameSource != nil {
+		manager.frameSource.Stop()
+		manager.frameSource = nil
+	}
 	manager.pipeline.Destroy()
 	manager.logger.Info().Msgf("destroying pipeline")
 	manager.pipeline = nil
