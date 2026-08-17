@@ -13,8 +13,10 @@ import (
 )
 
 type Desktop struct {
-	Display string
-	Wayland bool
+	Display              string
+	Wayland              bool
+	WaylandOutput        string
+	WaylandResizeCommand string
 
 	ScreenSize types.ScreenSize
 
@@ -34,6 +36,16 @@ func (Desktop) Init(cmd *cobra.Command) error {
 
 	cmd.PersistentFlags().Bool("desktop.wayland", false, "use Wayland desktop input and screen management")
 	if err := viper.BindPFlag("desktop.wayland", cmd.PersistentFlags().Lookup("desktop.wayland")); err != nil {
+		return err
+	}
+
+	cmd.PersistentFlags().String("desktop.wayland.output", "HEADLESS-1", "Wayland output name used for resizing")
+	if err := viper.BindPFlag("desktop.wayland.output", cmd.PersistentFlags().Lookup("desktop.wayland.output")); err != nil {
+		return err
+	}
+
+	cmd.PersistentFlags().String("desktop.wayland.resize_command", "wlr-randr", "Wayland output resize executable")
+	if err := viper.BindPFlag("desktop.wayland.resize_command", cmd.PersistentFlags().Lookup("desktop.wayland.resize_command")); err != nil {
 		return err
 	}
 
@@ -82,6 +94,8 @@ func (Desktop) InitV2(cmd *cobra.Command) error {
 func (s *Desktop) Set() {
 	s.Display = viper.GetString("desktop.display")
 	s.Wayland = viper.GetBool("desktop.wayland")
+	s.WaylandOutput = viper.GetString("desktop.wayland.output")
+	s.WaylandResizeCommand = viper.GetString("desktop.wayland.resize_command")
 
 	// Display is provided by env variable unless explicitly set
 	if s.Display == "" {
