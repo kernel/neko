@@ -14,6 +14,7 @@ import (
 
 type Desktop struct {
 	Display string
+	Wayland bool
 
 	ScreenSize types.ScreenSize
 
@@ -28,6 +29,11 @@ type Desktop struct {
 func (Desktop) Init(cmd *cobra.Command) error {
 	cmd.PersistentFlags().String("desktop.display", "", "X display to use for desktop sharing")
 	if err := viper.BindPFlag("desktop.display", cmd.PersistentFlags().Lookup("desktop.display")); err != nil {
+		return err
+	}
+
+	cmd.PersistentFlags().Bool("desktop.wayland", false, "use Wayland desktop input and screen management")
+	if err := viper.BindPFlag("desktop.wayland", cmd.PersistentFlags().Lookup("desktop.wayland")); err != nil {
 		return err
 	}
 
@@ -75,6 +81,7 @@ func (Desktop) InitV2(cmd *cobra.Command) error {
 
 func (s *Desktop) Set() {
 	s.Display = viper.GetString("desktop.display")
+	s.Wayland = viper.GetBool("desktop.wayland")
 
 	// Display is provided by env variable unless explicitly set
 	if s.Display == "" {
