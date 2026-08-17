@@ -31,6 +31,8 @@ The Gstreamer pipeline is started when the first client requests the video strea
 
 <ConfigurationTab options={configOptions} filter={[
   "capture.video.display",
+  "capture.video.wayland",
+  "capture.video.wayland_recorder",
   "capture.video.codec",
   "capture.video.ids",
   "capture.video.pipeline",
@@ -38,7 +40,9 @@ The Gstreamer pipeline is started when the first client requests the video strea
 ]} comments={false} />
 
 - <Def id="video.display" /> is the name of the [X display](https://www.x.org/wiki/) that you want to capture. If not specified, the environment variable `DISPLAY` will be used.
-- <Def id="video.codec" /> available codecs are `vp8`, `vp9`, `av1`, `h264`. [Supported video codecs](https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/WebRTC_codecs#supported_video_codecs) are dependent on the WebRTC implementation used by the client, `vp8` and `h264` are supported by all WebRTC implementations.
+- <Def id="video.wayland" /> switches the video source from `ximagesrc` to a `wf-recorder` process using the compositor's `wlr-screencopy-unstable-v1` protocol. It requires a Wayland compositor that exposes that protocol and an executable <Def id="video.wayland_recorder" />. Custom `gst_pipeline` values are not supported in this mode.
+- <Def id="video.wayland_recorder" /> is the executable used to produce raw `BGRx` frames on stdout. The default is `wf-recorder`.
+- <Def id="video.codec" /> available codecs are `vp8`, `vp9`, `av1`, `h264`. [Supported video codecs](https://developer.mozilla.org/en-US/docs/Web/Media/Formats/WebRTC_codecs#supported_video_codecs) are dependent on the WebRTC implementation used by the client, `vp8` and `h264` are supported by all WebRTC implementations.
 - <Def id="video.ids" /> is a list of pipeline ids that are defined in the <Opt id="video.pipelines" /> section. The first pipeline in the list will be the default pipeline.
 - <Def id="video.pipeline" /> is a shorthand for defining [Gstreamer pipeline description](#video.gst_pipeline) for a single pipeline. This is option is ignored if <Opt id="video.pipelines" /> is defined.
 - <Def id="video.pipelines" /> is a dictionary of pipeline configurations. Each pipeline configuration is defined by a unique pipeline id. They can be defined in two ways: either by building the pipeline dynamically using [Expression-Driven Configuration](#video.expression) or by defining the pipeline using a [Gstreamer Pipeline Description](#video.gst_pipeline).

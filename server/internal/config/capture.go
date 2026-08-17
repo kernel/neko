@@ -28,6 +28,9 @@ const (
 type Capture struct {
 	Display string
 
+	Wayland         bool
+	WaylandRecorder string
+
 	VideoCodec     codec.RTPCodec
 	VideoIDs       []string
 	VideoPipelines map[string]types.VideoConfig
@@ -77,6 +80,16 @@ func (Capture) Init(cmd *cobra.Command) error {
 	// videos
 	cmd.PersistentFlags().String("capture.video.display", "", "X display to capture")
 	if err := viper.BindPFlag("capture.video.display", cmd.PersistentFlags().Lookup("capture.video.display")); err != nil {
+		return err
+	}
+
+	cmd.PersistentFlags().Bool("capture.video.wayland", false, "capture a Wayland compositor output")
+	if err := viper.BindPFlag("capture.video.wayland", cmd.PersistentFlags().Lookup("capture.video.wayland")); err != nil {
+		return err
+	}
+
+	cmd.PersistentFlags().String("capture.video.wayland_recorder", "wf-recorder", "Wayland screencopy recorder executable")
+	if err := viper.BindPFlag("capture.video.wayland_recorder", cmd.PersistentFlags().Lookup("capture.video.wayland_recorder")); err != nil {
 		return err
 	}
 
@@ -325,6 +338,9 @@ func (s *Capture) Set() {
 	if s.Display == "" {
 		s.Display = os.Getenv("DISPLAY")
 	}
+
+	s.Wayland = viper.GetBool("capture.video.wayland")
+	s.WaylandRecorder = viper.GetString("capture.video.wayland_recorder")
 
 	// video
 	videoCodec := viper.GetString("capture.video.codec")
