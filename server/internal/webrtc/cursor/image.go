@@ -154,6 +154,9 @@ func (manager *image) RemoveListener(listener ImageListener) {
 
 func (manager *image) fetchEntry() (*imageEntry, error) {
 	cur := manager.desktop.GetCursorImage()
+	if cur == nil {
+		return &imageEntry{CursorImage: &types.CursorImage{}}, nil
+	}
 
 	img, err := utils.CreatePNGImage(cur.Image)
 	if err != nil {
