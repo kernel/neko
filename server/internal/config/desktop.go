@@ -44,7 +44,7 @@ func (Desktop) Init(cmd *cobra.Command) error {
 		return err
 	}
 
-	cmd.PersistentFlags().String("desktop.wayland.resize_command", "wlr-randr", "Wayland output resize executable")
+	cmd.PersistentFlags().String("desktop.wayland.resize_command", "", "Wayland output resize executable")
 	if err := viper.BindPFlag("desktop.wayland.resize_command", cmd.PersistentFlags().Lookup("desktop.wayland.resize_command")); err != nil {
 		return err
 	}

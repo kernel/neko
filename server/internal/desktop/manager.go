@@ -27,6 +27,7 @@ type DesktopManagerCtx struct {
 	config       *config.Desktop
 	screenSize   types.ScreenSize // cached screen size
 	input        xinput.Driver
+	waylandMu    sync.RWMutex
 	waylandInput *waylandInput
 
 	// Clipboard process holding the most recent clipboard data.
@@ -60,7 +61,9 @@ func (manager *DesktopManagerCtx) Start() {
 		if err != nil {
 			manager.logger.Panic().Err(err).Msg("unable to create Wayland input device")
 		}
+		manager.waylandMu.Lock()
 		manager.waylandInput = input
+		manager.waylandMu.Unlock()
 		manager.logger.Info().Str("screen_size", manager.screenSize.String()).Msg("using Wayland desktop backend")
 		return
 	}
@@ -150,11 +153,14 @@ func (manager *DesktopManagerCtx) Shutdown() error {
 	manager.logger.Info().Msgf("shutdown")
 
 	close(manager.shutdown)
+	manager.waylandMu.Lock()
 	if manager.waylandInput != nil {
 		manager.waylandInput.close()
 		manager.waylandInput = nil
+		manager.waylandMu.Unlock()
 		return nil
 	}
+	manager.waylandMu.Unlock()
 
 	manager.replaceClipboardCommand(nil)
 	manager.wg.Wait()

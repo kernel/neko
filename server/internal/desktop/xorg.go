@@ -12,8 +12,8 @@ import (
 )
 
 func (manager *DesktopManagerCtx) Move(x, y int) {
-	if manager.waylandInput != nil {
-		if err := manager.waylandInput.move(x, y); err != nil {
+	if input := manager.getWaylandInput(); input != nil {
+		if err := input.move(x, y); err != nil {
 			manager.logger.Warn().Err(err).Msg("Wayland pointer move failed")
 		}
 		return
@@ -22,15 +22,15 @@ func (manager *DesktopManagerCtx) Move(x, y int) {
 }
 
 func (manager *DesktopManagerCtx) GetCursorPosition() (int, int) {
-	if manager.waylandInput != nil {
-		return manager.waylandInput.position()
+	if input := manager.getWaylandInput(); input != nil {
+		return input.position()
 	}
 	return xorg.GetCursorPosition()
 }
 
 func (manager *DesktopManagerCtx) Scroll(deltaX, deltaY int, controlKey bool) {
-	if manager.waylandInput != nil {
-		returnErr := manager.waylandInput.scroll(deltaX, deltaY)
+	if input := manager.getWaylandInput(); input != nil {
+		returnErr := input.scroll(deltaX, deltaY, controlKey)
 		if returnErr != nil {
 			manager.logger.Warn().Err(returnErr).Msg("Wayland scroll failed")
 		}
@@ -54,35 +54,35 @@ func (manager *DesktopManagerCtx) Scroll(deltaX, deltaY int, controlKey bool) {
 }
 
 func (manager *DesktopManagerCtx) ButtonDown(code uint32) error {
-	if manager.waylandInput != nil {
-		return manager.waylandInput.button(code, true)
+	if input := manager.getWaylandInput(); input != nil {
+		return input.button(code, true)
 	}
 	return xorg.ButtonDown(code)
 }
 
 func (manager *DesktopManagerCtx) KeyDown(code uint32) error {
-	if manager.waylandInput != nil {
-		return manager.waylandInput.key(code, true)
+	if input := manager.getWaylandInput(); input != nil {
+		return input.key(code, true)
 	}
 	return xorg.KeyDown(code)
 }
 
 func (manager *DesktopManagerCtx) ButtonUp(code uint32) error {
-	if manager.waylandInput != nil {
-		return manager.waylandInput.button(code, false)
+	if input := manager.getWaylandInput(); input != nil {
+		return input.button(code, false)
 	}
 	return xorg.ButtonUp(code)
 }
 
 func (manager *DesktopManagerCtx) KeyUp(code uint32) error {
-	if manager.waylandInput != nil {
-		return manager.waylandInput.key(code, false)
+	if input := manager.getWaylandInput(); input != nil {
+		return input.key(code, false)
 	}
 	return xorg.KeyUp(code)
 }
 
 func (manager *DesktopManagerCtx) ButtonPress(code uint32) error {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		manager.ResetKeys()
 		defer manager.ResetKeys()
 		return manager.ButtonDown(code)
@@ -94,7 +94,7 @@ func (manager *DesktopManagerCtx) ButtonPress(code uint32) error {
 }
 
 func (manager *DesktopManagerCtx) KeyPress(codes ...uint32) error {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		manager.ResetKeys()
 		defer manager.ResetKeys()
 		for _, code := range codes {
@@ -121,8 +121,8 @@ func (manager *DesktopManagerCtx) KeyPress(codes ...uint32) error {
 }
 
 func (manager *DesktopManagerCtx) ResetKeys() {
-	if manager.waylandInput != nil {
-		if err := manager.waylandInput.resetKeys(); err != nil {
+	if input := manager.getWaylandInput(); input != nil {
+		if err := input.resetKeys(); err != nil {
 			manager.logger.Warn().Err(err).Msg("Wayland key reset failed")
 		}
 		return
@@ -131,7 +131,7 @@ func (manager *DesktopManagerCtx) ResetKeys() {
 }
 
 func (manager *DesktopManagerCtx) ScreenConfigurations() []types.ScreenSize {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return []types.ScreenSize{manager.screenSize}
 	}
 	var configs []types.ScreenSize
@@ -153,7 +153,7 @@ func (manager *DesktopManagerCtx) ScreenConfigurations() []types.ScreenSize {
 }
 
 func (manager *DesktopManagerCtx) SetScreenSize(screenSize types.ScreenSize) (types.ScreenSize, error) {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		if manager.config.WaylandResizeCommand == "" || manager.config.WaylandOutput == "" {
 			return manager.screenSize, fmt.Errorf("Wayland output resize is not configured")
 		}
@@ -166,13 +166,13 @@ func (manager *DesktopManagerCtx) SetScreenSize(screenSize types.ScreenSize) (ty
 		if err != nil {
 			return manager.screenSize, err
 		}
-		mu.Lock()
+		manager.waylandMu.Lock()
 		manager.emmiter.Emit("before_screen_size_change")
 		oldInput := manager.waylandInput
 		manager.waylandInput = input
 		manager.screenSize = screenSize
 		manager.emmiter.Emit("after_screen_size_change")
-		mu.Unlock()
+		manager.waylandMu.Unlock()
 		oldInput.close()
 		return screenSize, nil
 	}
@@ -194,14 +194,14 @@ func (manager *DesktopManagerCtx) SetScreenSize(screenSize types.ScreenSize) (ty
 }
 
 func (manager *DesktopManagerCtx) GetScreenSize() types.ScreenSize {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return manager.screenSize
 	}
 	return xorg.GetScreenSize()
 }
 
 func (manager *DesktopManagerCtx) SetKeyboardMap(kbd types.KeyboardMap) error {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return nil
 	}
 	// TOOD: Use native API.
@@ -211,7 +211,7 @@ func (manager *DesktopManagerCtx) SetKeyboardMap(kbd types.KeyboardMap) error {
 }
 
 func (manager *DesktopManagerCtx) GetKeyboardMap() (*types.KeyboardMap, error) {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return &types.KeyboardMap{}, nil
 	}
 	// TOOD: Use native API.
@@ -239,7 +239,7 @@ func (manager *DesktopManagerCtx) GetKeyboardMap() (*types.KeyboardMap, error) {
 }
 
 func (manager *DesktopManagerCtx) SetKeyboardModifiers(mod types.KeyboardModifiers) {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return
 	}
 	if mod.Shift != nil {
@@ -276,7 +276,7 @@ func (manager *DesktopManagerCtx) SetKeyboardModifiers(mod types.KeyboardModifie
 }
 
 func (manager *DesktopManagerCtx) GetKeyboardModifiers() types.KeyboardModifiers {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return types.KeyboardModifiers{}
 	}
 	modifiers := xorg.GetKeyboardModifiers()
@@ -299,14 +299,14 @@ func (manager *DesktopManagerCtx) GetKeyboardModifiers() types.KeyboardModifiers
 }
 
 func (manager *DesktopManagerCtx) GetCursorImage() *types.CursorImage {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return nil
 	}
 	return xorg.GetCursorImage()
 }
 
 func (manager *DesktopManagerCtx) GetScreenshotImage() *image.RGBA {
-	if manager.waylandInput != nil {
+	if manager.getWaylandInput() != nil {
 		return nil
 	}
 	return xorg.GetScreenshotImage()

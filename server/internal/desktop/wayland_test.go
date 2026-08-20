@@ -2,15 +2,15 @@ package desktop
 
 import "testing"
 
-func TestMapKeyConvertsX11Keycodes(t *testing.T) {
+func TestMapKeyConvertsX11Keysyms(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		in   uint32
 		want uint16
 	}{
-		{name: "escape", in: 9, want: 1},
-		{name: "a", in: 38, want: 30},
-		{name: "f12", in: 96, want: 88},
+		{name: "escape", in: 0xff1b, want: keyEsc},
+		{name: "a", in: 'a', want: keyA},
+		{name: "f12", in: 0xffc9, want: 88},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, ok := mapKey(test.in)

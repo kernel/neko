@@ -74,6 +74,12 @@ type waylandInput struct {
 	pressed map[uint16]struct{}
 }
 
+func (manager *DesktopManagerCtx) getWaylandInput() *waylandInput {
+	manager.waylandMu.RLock()
+	defer manager.waylandMu.RUnlock()
+	return manager.waylandInput
+}
+
 func newWaylandInput(width, height int) (*waylandInput, error) {
 	if width <= 0 || height <= 0 {
 		return nil, fmt.Errorf("invalid Wayland input size: %dx%d", width, height)
@@ -111,7 +117,7 @@ func (input *waylandInput) create() error {
 			return fmt.Errorf("enable uinput event type %d: %w", eventType, err)
 		}
 	}
-	for key := 0; key <= 0xff; key++ {
+	for key := 0; key <= 0x1ff; key++ {
 		if err := input.ioctl(uiSetKeybit, uintptr(key)); err != nil {
 			return fmt.Errorf("enable uinput key %d: %w", key, err)
 		}
@@ -233,9 +239,16 @@ func (input *waylandInput) key(code uint32, down bool) error {
 	return nil
 }
 
-func (input *waylandInput) scroll(deltaX, deltaY int) error {
+func (input *waylandInput) scroll(deltaX, deltaY int, controlKey bool) error {
 	input.mu.Lock()
 	defer input.mu.Unlock()
+
+	temporaryControl := controlKey && !input.isPressed(keyLeftCtrl) && !input.isPressed(keyRightCtrl)
+	if temporaryControl {
+		if err := input.emit(evKey, keyLeftCtrl, 1); err != nil {
+			return err
+		}
+	}
 	if deltaY != 0 {
 		if err := input.emit(evRel, relWheel, int32(-deltaY)); err != nil {
 			return err
@@ -246,7 +259,17 @@ func (input *waylandInput) scroll(deltaX, deltaY int) error {
 			return err
 		}
 	}
+	if temporaryControl {
+		if err := input.emit(evKey, keyLeftCtrl, 0); err != nil {
+			return err
+		}
+	}
 	return input.sync()
+}
+
+func (input *waylandInput) isPressed(code uint16) bool {
+	_, ok := input.pressed[code]
+	return ok
 }
 
 func (input *waylandInput) resetKeys() error {
@@ -274,11 +297,175 @@ func mapButton(code uint32) (uint16, bool) {
 	}
 }
 
-func mapKey(code uint32) (uint16, bool) {
-	if code < 8 || code > 263 {
-		return 0, false
+const (
+	keyEsc        = 1
+	key1          = 2
+	key2          = 3
+	key3          = 4
+	key4          = 5
+	key5          = 6
+	key6          = 7
+	key7          = 8
+	key8          = 9
+	key9          = 10
+	key0          = 11
+	keyMinus      = 12
+	keyEqual      = 13
+	keyBackspace  = 14
+	keyTab        = 15
+	keyQ          = 16
+	keyW          = 17
+	keyE          = 18
+	keyR          = 19
+	keyT          = 20
+	keyY          = 21
+	keyU          = 22
+	keyI          = 23
+	keyO          = 24
+	keyP          = 25
+	keyLeftBrace  = 26
+	keyRightBrace = 27
+	keyEnter      = 28
+	keyLeftCtrl   = 29
+	keyA          = 30
+	keyS          = 31
+	keyD          = 32
+	keyF          = 33
+	keyG          = 34
+	keyH          = 35
+	keyJ          = 36
+	keyK          = 37
+	keyL          = 38
+	keySemicolon  = 39
+	keyApostrophe = 40
+	keyGrave      = 41
+	keyLeftShift  = 42
+	keyBackslash  = 43
+	keyZ          = 44
+	keyX          = 45
+	keyC          = 46
+	keyV          = 47
+	keyB          = 48
+	keyN          = 49
+	keyM          = 50
+	keyComma      = 51
+	keyDot        = 52
+	keySlash      = 53
+	keyRightShift = 54
+	keyLeftAlt    = 56
+	keySpace      = 57
+	keyCapsLock   = 58
+	keyF1         = 59
+	keyF10        = 68
+	keyRightCtrl  = 97
+	keyRightAlt   = 100
+	keyHome       = 102
+	keyUp         = 103
+	keyPageUp     = 104
+	keyLeft       = 105
+	keyRight      = 106
+	keyEnd        = 107
+	keyDown       = 108
+	keyPageDown   = 109
+	keyInsert     = 110
+	keyDelete     = 111
+)
+
+func mapKey(keysym uint32) (uint16, bool) {
+	if keysym >= 'a' && keysym <= 'z' {
+		return keyA + uint16(keysym-'a'), true
 	}
-	return uint16(code - 8), true
+	if keysym >= 'A' && keysym <= 'Z' {
+		return keyA + uint16(keysym-'A'), true
+	}
+	if keysym >= '1' && keysym <= '9' {
+		return key1 + uint16(keysym-'1'), true
+	}
+	if keysym == '0' {
+		return key0, true
+	}
+
+	switch keysym {
+	case 0xff1b:
+		return keyEsc, true
+	case 0xff08:
+		return keyBackspace, true
+	case 0xff09:
+		return keyTab, true
+	case 0xff0d:
+		return keyEnter, true
+	case 0xffff:
+		return keyDelete, true
+	case 0xff63:
+		return keyInsert, true
+	case 0xff50:
+		return keyHome, true
+	case 0xff51:
+		return keyLeft, true
+	case 0xff52:
+		return keyUp, true
+	case 0xff53:
+		return keyRight, true
+	case 0xff54:
+		return keyDown, true
+	case 0xff55:
+		return keyPageUp, true
+	case 0xff56:
+		return keyPageDown, true
+	case 0xff57:
+		return keyEnd, true
+	case 0xffe1:
+		return keyLeftShift, true
+	case 0xffe2:
+		return keyRightShift, true
+	case 0xffe3:
+		return keyLeftCtrl, true
+	case 0xffe4:
+		return keyRightCtrl, true
+	case 0xffe9:
+		return keyLeftAlt, true
+	case 0xffea:
+		return keyRightAlt, true
+	}
+	if keysym >= 0xffbe && keysym <= 0xffc7 {
+		return keyF1 + uint16(keysym-0xffbe), true
+	}
+	if keysym == 0xffc8 {
+		return 87, true
+	}
+	if keysym == 0xffc9 {
+		return 88, true
+	}
+
+	switch keysym {
+	case '-', '_':
+		return keyMinus, true
+	case '=', '+':
+		return keyEqual, true
+	case '[', '{':
+		return keyLeftBrace, true
+	case ']', '}':
+		return keyRightBrace, true
+	case '\\', '|':
+		return keyBackslash, true
+	case ';', ':':
+		return keySemicolon, true
+	case '\'', '"':
+		return keyApostrophe, true
+	case '`', '~':
+		return keyGrave, true
+	case ',', '<':
+		return keyComma, true
+	case '.', '>':
+		return keyDot, true
+	case '/', '?':
+		return keySlash, true
+	case ' ':
+		return keySpace, true
+	case 0xffe5:
+		return keyCapsLock, true
+	}
+	return 0, false
 }
 
 func boolValue(value bool) int32 {

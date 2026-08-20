@@ -53,14 +53,10 @@ func New(desktop types.DesktopManager, config *config.Capture) *CaptureManagerCt
 			}
 
 			if config.Wayland {
-				fps := screen.Rate
-				if fps <= 0 {
-					fps = 25
-				}
 				return fmt.Sprintf(
 					"appsrc name=appsrc is-live=true format=time do-timestamp=true "+
-						"caps=video/x-raw,format=BGRx,width=%d,height=%d,framerate=%d/1 "+
-						"%s ! appsink name=appsink", screen.Width, screen.Height, fps, pipeline,
+						"caps=video/x-raw,format=BGRx,width=%d,height=%d "+
+						"%s ! appsink name=appsink", screen.Width, screen.Height, pipeline,
 				), nil
 			}
 
