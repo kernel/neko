@@ -1,3 +1,5 @@
+//go:build !windows
+
 #include "gst.h"
 
 static void gstreamer_pipeline_log(GstPipelineCtx *ctx, char* level, const char* format, ...) {

@@ -1,3 +1,5 @@
+//go:build !windows
+
 package gst
 
 /*
@@ -29,25 +31,6 @@ var (
 func init() {
 	C.gst_init(nil, nil)
 	registry = C.gst_registry_get()
-}
-
-type Pipeline interface {
-	Src() string
-	Sample() chan types.Sample
-	// attach sink or src to pipeline
-	AttachAppsink(sinkName string)
-	AttachAppsrc(srcName string)
-	// control pipeline lifecycle
-	Play()
-	Pause()
-	Destroy()
-	Push(buffer []byte)
-	// modify the property of a bin
-	SetPropInt(binName string, prop string, value int) bool
-	SetCapsFramerate(binName string, numerator, denominator int) bool
-	SetCapsResolution(binName string, width, height int) bool
-	// emit video keyframe
-	EmitVideoKeyframe() bool
 }
 
 type pipeline struct {
