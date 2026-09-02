@@ -8,6 +8,7 @@ package gst
 import "C"
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,7 +73,8 @@ func CreatePipeline(pipelineStr string) (Pipeline, error) {
 
 	if gstError != nil {
 		defer C.g_error_free(gstError)
-		return nil, fmt.Errorf("(pipeline error) %s", C.GoString(gstError.message))
+		msg := annotatePipelineError(pipelineStr, C.GoString(gstError.message))
+		return nil, fmt.Errorf("(pipeline error) %s", msg)
 	}
 
 	p := &pipeline{
@@ -88,6 +90,23 @@ func CreatePipeline(pipelineStr string) (Pipeline, error) {
 
 	pipelines[p.id] = p
 	return p, nil
+}
+
+func annotatePipelineError(pipelineStr, msg string) string {
+	lowerMsg := strings.ToLower(msg)
+	if !strings.Contains(pipelineStr, "nvh264enc") {
+		return msg
+	}
+
+	if !strings.Contains(lowerMsg, "nvh264enc") {
+		return msg
+	}
+
+	if !strings.Contains(lowerMsg, "no element") && !strings.Contains(lowerMsg, "no such element or plugin") {
+		return msg
+	}
+
+	return msg + " (live view could not initialize NVENC/CUDA; on GPU browsers this usually means GPU memory is exhausted by replay or browser GPU load. Reduce the browser resolution or stop replay, then try live view again.)"
 }
 
 func (p *pipeline) Src() string {
