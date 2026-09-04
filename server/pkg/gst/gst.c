@@ -29,7 +29,7 @@ static int cuda_probe_result(void *library, CUresult code, const char *stage,
 }
 
 int gstreamer_cuda_context_probe(char **stage, char **errorName) {
-  void *library = dlopen("libcuda.so.1", RTLD_LAZY | RTLD_LOCAL);
+  void *library = dlopen("libcuda.so.1", RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
   if (library == NULL) {
     *stage = g_strdup("loading the CUDA driver");
     *errorName = g_strdup("CUDA_DRIVER_LIBRARY_UNAVAILABLE");
