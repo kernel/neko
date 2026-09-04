@@ -3,6 +3,7 @@ package gst
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIsMissingNVENCElementError(t *testing.T) {
@@ -47,6 +48,50 @@ func TestIsMissingNVENCElementError(t *testing.T) {
 				t.Fatalf("isMissingNVENCElementError(%q, %q) = %v, want %v", tt.pipelineStr, tt.msg, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCreatePipelineReleasesLockBeforeSlowCUDAProbe(t *testing.T) {
+	probeStarted := make(chan struct{})
+	releaseProbe := make(chan struct{})
+	pipelineDone := make(chan error, 1)
+
+	go func() {
+		_, err := createPipeline("nvh264enc_missing", func() cudaProbeResult {
+			close(probeStarted)
+			<-releaseProbe
+			return cudaProbeResult{code: cudaErrorOutOfMemory, stage: "creating a CUDA context", name: "CUDA_ERROR_OUT_OF_MEMORY"}
+		})
+		pipelineDone <- err
+	}()
+
+	select {
+	case <-probeStarted:
+	case err := <-pipelineDone:
+		t.Fatalf("pipeline creation returned before running probe: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for CUDA probe")
+	}
+
+	lockAcquired := make(chan struct{})
+	go func() {
+		pipelinesLock.Lock()
+		pipelinesLock.Unlock()
+		close(lockAcquired)
+	}()
+
+	select {
+	case <-lockAcquired:
+		close(releaseProbe)
+	case <-time.After(time.Second):
+		close(releaseProbe)
+		<-pipelineDone
+		<-lockAcquired
+		t.Fatal("pipeline lock remained held during CUDA probe")
+	}
+
+	if err := <-pipelineDone; err == nil {
+		t.Fatal("createPipeline() error = nil, want missing element error")
 	}
 }
 

@@ -61,20 +61,24 @@ type pipeline struct {
 }
 
 func CreatePipeline(pipelineStr string) (Pipeline, error) {
+	return createPipeline(pipelineStr, probeCUDAContext)
+}
+
+func createPipeline(pipelineStr string, probe func() cudaProbeResult) (Pipeline, error) {
 	id := atomic.AddInt32(&pSerial, 1)
 
 	pipelineStrUnsafe := C.CString(pipelineStr)
 	defer C.free(unsafe.Pointer(pipelineStrUnsafe))
 
 	pipelinesLock.Lock()
-	defer pipelinesLock.Unlock()
 
 	var gstError *C.GError
 	ctx := C.gstreamer_pipeline_create(pipelineStrUnsafe, C.int(id), &gstError)
 
 	if gstError != nil {
+		pipelinesLock.Unlock()
 		defer C.g_error_free(gstError)
-		msg := annotatePipelineError(pipelineStr, C.GoString(gstError.message))
+		msg := annotatePipelineError(pipelineStr, C.GoString(gstError.message), probe)
 		return nil, fmt.Errorf("(pipeline error) %s", msg)
 	}
 
@@ -90,6 +94,7 @@ func CreatePipeline(pipelineStr string) (Pipeline, error) {
 	}
 
 	pipelines[p.id] = p
+	pipelinesLock.Unlock()
 	return p, nil
 }
 
@@ -107,12 +112,12 @@ type cudaProbeResult struct {
 	name  string
 }
 
-func annotatePipelineError(pipelineStr, msg string) string {
+func annotatePipelineError(pipelineStr, msg string, probe func() cudaProbeResult) string {
 	if !isMissingNVENCElementError(pipelineStr, msg) {
 		return msg
 	}
 
-	return fmt.Sprintf("%s (%s)", msg, nvencFailureDetail(probeCUDAContext()))
+	return fmt.Sprintf("%s (%s)", msg, nvencFailureDetail(probe()))
 }
 
 func isMissingNVENCElementError(pipelineStr, msg string) bool {
