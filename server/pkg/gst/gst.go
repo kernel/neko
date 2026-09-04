@@ -2,6 +2,7 @@ package gst
 
 /*
 #cgo pkg-config: gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0
+#cgo LDFLAGS: -ldl
 
 #include "gst.h"
 */
@@ -60,20 +61,24 @@ type pipeline struct {
 }
 
 func CreatePipeline(pipelineStr string) (Pipeline, error) {
+	return createPipeline(pipelineStr, probeCUDAContext)
+}
+
+func createPipeline(pipelineStr string, probe func() cudaProbeResult) (Pipeline, error) {
 	id := atomic.AddInt32(&pSerial, 1)
 
 	pipelineStrUnsafe := C.CString(pipelineStr)
 	defer C.free(unsafe.Pointer(pipelineStrUnsafe))
 
 	pipelinesLock.Lock()
-	defer pipelinesLock.Unlock()
 
 	var gstError *C.GError
 	ctx := C.gstreamer_pipeline_create(pipelineStrUnsafe, C.int(id), &gstError)
 
 	if gstError != nil {
+		pipelinesLock.Unlock()
 		defer C.g_error_free(gstError)
-		msg := annotatePipelineError(pipelineStr, C.GoString(gstError.message))
+		msg := annotatePipelineError(pipelineStr, C.GoString(gstError.message), probe)
 		return nil, fmt.Errorf("(pipeline error) %s", msg)
 	}
 
@@ -89,24 +94,74 @@ func CreatePipeline(pipelineStr string) (Pipeline, error) {
 	}
 
 	pipelines[p.id] = p
+	pipelinesLock.Unlock()
 	return p, nil
 }
 
-func annotatePipelineError(pipelineStr, msg string) string {
+const (
+	cudaDriverLibraryUnavailable = -1
+	cudaDriverSymbolUnavailable  = -2
+	cudaSuccess                  = 0
+	cudaErrorOutOfMemory         = 2
+	cudaErrorNoDevice            = 100
+)
+
+type cudaProbeResult struct {
+	code  int
+	stage string
+	name  string
+}
+
+func annotatePipelineError(pipelineStr, msg string, probe func() cudaProbeResult) string {
+	if !isMissingNVENCElementError(pipelineStr, msg) {
+		return msg
+	}
+
+	return fmt.Sprintf("%s (%s)", msg, nvencFailureDetail(probe()))
+}
+
+func isMissingNVENCElementError(pipelineStr, msg string) bool {
 	lowerMsg := strings.ToLower(msg)
-	if !strings.Contains(pipelineStr, "nvh264enc") {
-		return msg
+	return strings.Contains(pipelineStr, "nvh264enc") &&
+		strings.Contains(lowerMsg, "nvh264enc") &&
+		(strings.Contains(lowerMsg, "no element") || strings.Contains(lowerMsg, "no such element or plugin"))
+}
+
+func probeCUDAContext() cudaProbeResult {
+	var stage, name *C.char
+	code := int(C.gstreamer_cuda_context_probe(&stage, &name))
+
+	if stage != nil {
+		defer C.g_free(C.gpointer(stage))
+	}
+	if name != nil {
+		defer C.g_free(C.gpointer(name))
 	}
 
-	if !strings.Contains(lowerMsg, "nvh264enc") {
-		return msg
+	return cudaProbeResult{
+		code:  code,
+		stage: C.GoString(stage),
+		name:  C.GoString(name),
 	}
+}
 
-	if !strings.Contains(lowerMsg, "no element") && !strings.Contains(lowerMsg, "no such element or plugin") {
-		return msg
+func nvencFailureDetail(probe cudaProbeResult) string {
+	const prefix = "live view could not initialize NVENC/CUDA"
+
+	switch probe.code {
+	case cudaDriverLibraryUnavailable:
+		return prefix + ": the CUDA driver library is unavailable"
+	case cudaDriverSymbolUnavailable:
+		return prefix + ": required CUDA driver symbols are unavailable"
+	case cudaSuccess:
+		return prefix + ": the CUDA context probe succeeded; possible causes are failed GStreamer nvcodec registration, an unavailable NVIDIA encode library, a driver or capability mismatch, or exhausted NVENC sessions"
+	case cudaErrorOutOfMemory:
+		return fmt.Sprintf("%s: CUDA reported %s (%d) while %s. GPU memory is exhausted; reduce browser resolution or stop replay/browser GPU load, then restart Neko before retrying live view", prefix, probe.name, probe.code, probe.stage)
+	case cudaErrorNoDevice:
+		return fmt.Sprintf("%s: CUDA reported %s (%d) while %s; no CUDA-capable GPU is available to Neko", prefix, probe.name, probe.code, probe.stage)
+	default:
+		return fmt.Sprintf("%s: CUDA reported %s (%d) while %s", prefix, probe.name, probe.code, probe.stage)
 	}
-
-	return msg + " (live view could not initialize NVENC/CUDA; on GPU browsers this usually means GPU memory is exhausted by replay or browser GPU load. Reduce the browser resolution or stop replay, then try live view again.)"
 }
 
 func (p *pipeline) Src() string {
