@@ -5,20 +5,23 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/m1k1o/neko/server/internal/api/benchmark"
 	"github.com/m1k1o/neko/server/internal/api/members"
 	"github.com/m1k1o/neko/server/internal/api/room"
 	"github.com/m1k1o/neko/server/internal/api/sessions"
+	"github.com/m1k1o/neko/server/internal/benchmarks"
 	"github.com/m1k1o/neko/server/pkg/auth"
 	"github.com/m1k1o/neko/server/pkg/types"
 	"github.com/m1k1o/neko/server/pkg/utils"
 )
 
 type ApiManagerCtx struct {
-	sessions types.SessionManager
-	members  types.MemberManager
-	desktop  types.DesktopManager
-	capture  types.CaptureManager
-	routers  map[string]func(types.Router)
+	sessions          types.SessionManager
+	members           types.MemberManager
+	desktop           types.DesktopManager
+	capture           types.CaptureManager
+	benchmarkCollector *benchmarks.WebRTCStatsCollector
+	routers           map[string]func(types.Router)
 }
 
 func New(
@@ -26,19 +29,27 @@ func New(
 	members types.MemberManager,
 	desktop types.DesktopManager,
 	capture types.CaptureManager,
+	benchmarkCollector *benchmarks.WebRTCStatsCollector,
 ) *ApiManagerCtx {
 
 	return &ApiManagerCtx{
-		sessions: sessions,
-		members:  members,
-		desktop:  desktop,
-		capture:  capture,
-		routers:  make(map[string]func(types.Router)),
+		sessions:          sessions,
+		members:           members,
+		desktop:           desktop,
+		capture:           capture,
+		benchmarkCollector: benchmarkCollector,
+		routers:           make(map[string]func(types.Router)),
 	}
 }
 
 func (api *ApiManagerCtx) Route(r types.Router) {
 	r.Post("/login", api.Login)
+
+	// Internal benchmark endpoint (unauthenticated)
+	if api.benchmarkCollector != nil {
+		benchmarkHandler := benchmark.New(api.benchmarkCollector)
+		r.Route("/internal/benchmark", benchmarkHandler.Route)
+	}
 
 	// Authenticated area
 	r.Group(func(r types.Router) {

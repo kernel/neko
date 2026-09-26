@@ -23,6 +23,7 @@ type WebRTCPeerCtx struct {
 	logger     zerolog.Logger
 	session    types.Session
 	metrics    *metrics
+	manager    *WebRTCManagerCtx
 	connection *webrtc.PeerConnection
 	// bandwidth estimator
 	estimator     cc.BandwidthEstimator
@@ -111,6 +112,11 @@ func (peer *WebRTCPeerCtx) SetCandidate(candidate webrtc.ICECandidateInit) error
 func (peer *WebRTCPeerCtx) Destroy() {
 	peer.mu.Lock()
 	defer peer.mu.Unlock()
+
+	// Unregister from benchmark collector before closing
+	if peer.manager != nil {
+		peer.manager.unregisterPeerConnection(peer.connection)
+	}
 
 	var err error
 
