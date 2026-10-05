@@ -57,7 +57,13 @@ zero. No other client should write to the input socket or grab touch/pointer
 events. Each fixture is sent as one 12-byte write; stream-fragment handling is
 an existing driver limitation, not covered by this success-path suite.
 
-The test waits up to three seconds for asynchronous input and then drains both
+The inherited driver posts from a bespoke thread without waking Xorg's main
+loop. The test sends periodic XNoOp requests, as an active X client would, to
+wake that loop. It still asserts observed events; it does not validate delivery
+on a completely idle server. Xorg itself restores X/Y mask bits on the sentinel
+touch-end event, so the raw end mask is expected to contain those two axes.
+
+The runner enforces a 30-second timeout. The test waits up to three seconds for asynchronous input and then drains both
 X clients to quiescence. A successful socket write or `XSync` alone is not
 considered proof of event delivery.
 

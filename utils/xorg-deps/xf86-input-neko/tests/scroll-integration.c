@@ -150,6 +150,12 @@ static struct capture collect(int expect_output)
     long long deadline = now_ms() + (expect_output ? TIMEOUT_MS : QUIET_MS * 2);
     long long quiet_since = 0;
     for (;;) {
+        /* This driver posts from a bespoke thread without waking Xorg's main
+         * loop. A request supplies that wake, as normal active clients do.
+         * This is not an input-delivery barrier: still wait for actual events.
+         */
+        XNoOp(xi);
+        XFlush(xi);
         int processed = drain(&capture);
         long long now = now_ms();
         int received = capture.raw_motion_count + capture.raw_touch_count[0] +
@@ -257,11 +263,15 @@ static unsigned int touch_case(const char *name, uint8_t type,
              capture.raw_touch_count[index], capture.touch_count[index]);
     struct sample *raw = &capture.raw_touch[index];
     struct sample *cooked = &capture.touch[index];
-    unsigned int expected_mask = (x == -1 && y == -1) ? 0 : 7;
+    int sentinel = x == -1 && y == -1;
+    /* Xorg restores cached X/Y into the processed TouchEnd mask and merges
+     * those bits into the raw event too, even when the driver supplied none.
+     */
+    unsigned int expected_mask = sentinel ? 3 : 7;
     if (raw->mask != expected_mask || (cooked->mask & ~7u))
         fail("touch mask raw/cooked %#x/%#x, expected raw %#x and only axes 0-2",
              raw->mask, cooked->mask, expected_mask);
-    if (expected_mask && (raw->values[0] != x || raw->values[1] != y ||
+    if (!sentinel && (raw->values[0] != x || raw->values[1] != y ||
                           raw->values[2] != pressure))
         fail("raw touch coordinates/pressure differ from fixture");
     for (int i = 0; i < 3; ++i)

@@ -73,4 +73,4 @@ for attempt in $(seq 1 100); do
     sleep 0.1
 done
 [ "$ready" = true ] || { echo 'Timed out starting isolated Xorg' >&2; exit 1; }
-"$work/scroll-integration" ":$(cat "$work/display")" "$work/neko.sock" dummy_touchscreen
+timeout 30s "$work/scroll-integration" ":$(cat "$work/display")" "$work/neko.sock" dummy_touchscreen
