@@ -43,12 +43,28 @@ type scrollAccumulator struct {
 // the sign of the pending motion and a reversal cancels it before emitting a
 // notch in the new direction.
 func (a *scrollAccumulator) add(deltaX, deltaY int) (notchesX, notchesY int) {
-	a.x += deltaX
-	a.y += deltaY
-
-	notchesX, a.x = a.x/scrollNotchUnits, a.x%scrollNotchUnits
-	notchesY, a.y = a.y/scrollNotchUnits, a.y%scrollNotchUnits
+	notchesX, a.x = accumulateScrollAxis(a.x, deltaX)
+	notchesY, a.y = accumulateScrollAxis(a.y, deltaY)
 	return notchesX, notchesY
+}
+
+func accumulateScrollAxis(residual, delta int) (notches, remainder int) {
+	// Split before adding so a valid delta near an int limit cannot overflow
+	// when a previous call left a sub-notch remainder.
+	notches = delta / scrollNotchUnits
+	remainder = residual + delta%scrollNotchUnits
+	notches += remainder / scrollNotchUnits
+	remainder %= scrollNotchUnits
+
+	// Keep truncation toward zero when the delta reverses the residual.
+	if notches > 0 && remainder < 0 {
+		notches--
+		remainder += scrollNotchUnits
+	} else if notches < 0 && remainder > 0 {
+		notches++
+		remainder -= scrollNotchUnits
+	}
+	return notches, remainder
 }
 
 // reset discards any pending sub-notch motion.

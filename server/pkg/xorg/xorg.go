@@ -106,12 +106,13 @@ func Scroll(deltaX, deltaY int, controlKey bool) {
 // the driver is enabled but unreachable. XTest can only click whole notches,
 // so the sub-notch remainder is carried to the next call instead of being
 // replayed once per unit. Its caller latches the Control modifier around the
-// driver attempt, so controlKey here only keeps zoom and page scrolling in
-// separate accumulators.
+// driver attempt. Legacy clients can also hold Control through key events,
+// so select the accumulator using the effective X server modifier state.
 func ScrollUnits(deltaX, deltaY int, controlKey bool) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	controlKey = controlKey || C.XGetKeyboardModifiers()&C.ControlMask != 0
 	notchesX, notchesY := scrollResidualFor(controlKey).add(deltaX, deltaY)
 	if notchesX == 0 && notchesY == 0 {
 		return

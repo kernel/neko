@@ -1,6 +1,9 @@
 package xorg
 
-import "testing"
+import (
+	"math/big"
+	"testing"
+)
 
 func TestScrollAccumulatorAdd(t *testing.T) {
 	// each step feeds delta on the vertical axis and checks the notches
@@ -98,5 +101,27 @@ func TestResetScrollResidualsClearsBoth(t *testing.T) {
 	}
 	if _, notchesY := scrollResidualFor(true).add(0, 20); notchesY != 0 {
 		t.Fatalf("control add(0, 20) after reset = %d notches, want 0", notchesY)
+	}
+}
+
+func TestScrollAccumulatorIntegerLimits(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	deltas := []int{minInt, minInt + 119, -121, -120, -119, -1, 0, 1, 119, 120, 121, maxInt - 119, maxInt}
+	for residual := -119; residual <= 119; residual++ {
+		for _, delta := range deltas {
+			var total, divisor, quotient, remainder big.Int
+			total.SetInt64(int64(delta))
+			total.Add(&total, big.NewInt(int64(residual)))
+			divisor.SetInt64(scrollNotchUnits)
+			quotient.QuoRem(&total, &divisor, &remainder)
+
+			acc := scrollAccumulator{x: residual, y: residual}
+			x, y := acc.add(delta, delta)
+			if x != int(quotient.Int64()) || y != x || acc.x != int(remainder.Int64()) || acc.y != acc.x {
+				t.Fatalf("residual %d + delta %d = (%d, %d) remainder (%d, %d); want %s remainder %s",
+					residual, delta, x, y, acc.x, acc.y, quotient.String(), remainder.String())
+			}
+		}
 	}
 }
