@@ -38,3 +38,4 @@ gboolean gstreamer_pipeline_set_prop_int(GstPipelineCtx *ctx, char *binName, cha
 gboolean gstreamer_pipeline_set_caps_framerate(GstPipelineCtx *ctx, const gchar* binName, gint numerator, gint denominator);
 gboolean gstreamer_pipeline_set_caps_resolution(GstPipelineCtx *ctx, const gchar* binName, gint width, gint height);
 gboolean gstreamer_pipeline_emit_video_keyframe(GstPipelineCtx *ctx);
+int gstreamer_cuda_context_probe(char **stage, char **errorName);

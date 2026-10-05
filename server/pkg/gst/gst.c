@@ -1,5 +1,85 @@
 #include "gst.h"
 
+#include <dlfcn.h>
+
+#define CUDA_ERROR_NO_DEVICE 100
+
+typedef int CUdevice;
+typedef void *CUcontext;
+typedef int CUresult;
+
+typedef CUresult (*CuInit)(unsigned int flags);
+typedef CUresult (*CuDeviceGetCount)(int *count);
+typedef CUresult (*CuDeviceGet)(CUdevice *device, int ordinal);
+typedef CUresult (*CuCtxCreate)(CUcontext *context, unsigned int flags, CUdevice device);
+typedef CUresult (*CuCtxDestroy)(CUcontext context);
+typedef CUresult (*CuGetErrorName)(CUresult error, const char **name);
+
+static int cuda_probe_result(void *library, CUresult code, const char *stage,
+    CuGetErrorName getErrorName, char **resultStage, char **errorName) {
+  const char *name = NULL;
+  if (getErrorName(code, &name) != 0 || name == NULL) {
+    name = "CUDA_ERROR_UNKNOWN";
+  }
+
+  *resultStage = g_strdup(stage);
+  *errorName = g_strdup(name);
+  dlclose(library);
+  return code;
+}
+
+int gstreamer_cuda_context_probe(char **stage, char **errorName) {
+  void *library = dlopen("libcuda.so.1", RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
+  if (library == NULL) {
+    *stage = g_strdup("loading the CUDA driver");
+    *errorName = g_strdup("CUDA_DRIVER_LIBRARY_UNAVAILABLE");
+    return -1;
+  }
+
+  CuInit cuInit = (CuInit)dlsym(library, "cuInit");
+  CuDeviceGetCount cuDeviceGetCount = (CuDeviceGetCount)dlsym(library, "cuDeviceGetCount");
+  CuDeviceGet cuDeviceGet = (CuDeviceGet)dlsym(library, "cuDeviceGet");
+  CuCtxCreate cuCtxCreate = (CuCtxCreate)dlsym(library, "cuCtxCreate_v2");
+  CuCtxDestroy cuCtxDestroy = (CuCtxDestroy)dlsym(library, "cuCtxDestroy_v2");
+  CuGetErrorName cuGetErrorName = (CuGetErrorName)dlsym(library, "cuGetErrorName");
+  if (cuInit == NULL || cuDeviceGetCount == NULL || cuDeviceGet == NULL ||
+      cuCtxCreate == NULL || cuCtxDestroy == NULL || cuGetErrorName == NULL) {
+    *stage = g_strdup("resolving CUDA driver symbols");
+    *errorName = g_strdup("CUDA_DRIVER_SYMBOL_UNAVAILABLE");
+    dlclose(library);
+    return -2;
+  }
+
+  CUresult result = cuInit(0);
+  if (result != 0) {
+    return cuda_probe_result(library, result, "initializing CUDA", cuGetErrorName, stage, errorName);
+  }
+
+  int deviceCount = 0;
+  result = cuDeviceGetCount(&deviceCount);
+  if (result != 0) {
+    return cuda_probe_result(library, result, "querying CUDA devices", cuGetErrorName, stage, errorName);
+  }
+  if (deviceCount == 0) {
+    return cuda_probe_result(library, CUDA_ERROR_NO_DEVICE, "querying CUDA devices", cuGetErrorName, stage, errorName);
+  }
+
+  CUdevice device;
+  result = cuDeviceGet(&device, 0);
+  if (result != 0) {
+    return cuda_probe_result(library, result, "selecting a CUDA device", cuGetErrorName, stage, errorName);
+  }
+
+  CUcontext context;
+  result = cuCtxCreate(&context, 0, device);
+  if (result != 0) {
+    return cuda_probe_result(library, result, "creating a CUDA context", cuGetErrorName, stage, errorName);
+  }
+
+  cuCtxDestroy(context);
+  return cuda_probe_result(library, 0, "creating a CUDA context", cuGetErrorName, stage, errorName);
+}
+
 static void gstreamer_pipeline_log(GstPipelineCtx *ctx, char* level, const char* format, ...) {
   va_list argptr;
   va_start(argptr, format);
