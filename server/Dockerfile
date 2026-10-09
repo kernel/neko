@@ -4,6 +4,7 @@ FROM $BASE_IMAGE AS server
 
 COPY --from=go-toolchain /usr/local/go /usr/local/go
 ENV GOPATH=/go
+ENV GOTOOLCHAIN=local
 ENV PATH=/usr/local/go/bin:$PATH
 WORKDIR /src
 
