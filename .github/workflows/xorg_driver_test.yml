@@ -1,0 +1,55 @@
+name: Test Xorg input driver
+
+on:
+  push:
+    paths:
+      - utils/xorg-deps/xf86-input-neko/**
+      - .github/workflows/xorg_driver_test.yml
+  pull_request:
+    paths:
+      - utils/xorg-deps/xf86-input-neko/**
+      - .github/workflows/xorg_driver_test.yml
+
+permissions:
+  contents: read
+
+jobs:
+  driver:
+    name: Build and test driver (${{ matrix.debian }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    container: debian:${{ matrix.debian }}-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        debian: [bullseye, bookworm]
+    steps:
+      # Bullseye LTS ended in August 2026 and its security packages were removed
+      # before archival completed (Debian bug #1147093). Keep this compatibility
+      # test reproducible using Debian's signed final-LTS snapshot.
+      - name: Select archived bullseye package snapshot
+        if: matrix.debian == 'bullseye'
+        run: |
+          rm -f /etc/apt/sources.list.d/*
+          printf '%s\n' \
+            'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260831T235959Z/ bullseye main' \
+            'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260831T235959Z/ bullseye-security main' \
+            > /etc/apt/sources.list
+      - name: Install build and isolated Xorg dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git gcc pkgconf autoconf automake libtool make \
+            xorg-dev xutils-dev xserver-xorg-core xserver-xorg-video-dummy
+      - uses: actions/checkout@v4
+      - name: Build the vendored driver
+        working-directory: utils/xorg-deps/xf86-input-neko
+        run: |
+          ./autogen.sh --prefix=/usr
+          ./configure
+          make -j2
+      - name: Test real XI2 scroll and touch events
+        working-directory: utils/xorg-deps/xf86-input-neko
+        run: ./tests/run-integration.sh
