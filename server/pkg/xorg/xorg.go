@@ -206,6 +206,8 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 		s.Rate = 60
 	}
 
+	requestedRate := s.Rate
+
 	// convert variables to C types
 	c_width, c_height, c_rate := C.int(s.Width), C.int(s.Height), C.short(s.Rate)
 
@@ -214,15 +216,19 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 
 	// if no existing mode matches, dynamically create one via libxcvt
 	if status != C.RRSetConfigSuccess {
-		C.XCreateScreenMode(&c_width, &c_height, c_rate)
+		// the created mode carries the rate its timings actually realize, which
+		// is what the server will accept - applying the requested rate instead
+		// fails with BadValue whenever the two round to different integers.
+		C.XCreateScreenMode(&c_width, &c_height, &c_rate)
 
 		// screen configuration should exist now, set it
 		status = C.XSetScreenConfiguration(c_width, c_height, c_rate)
 	}
 
-	// update s with the actual dimensions that were set
+	// update s with the actual configuration that was set
 	s.Width = int(c_width)
 	s.Height = int(c_height)
+	s.Rate = int16(c_rate)
 
 	var err error
 
@@ -233,7 +239,7 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 
 	// if specified rate is not supported a BadValue error is returned
 	if status == C.BadValue {
-		err = fmt.Errorf("unsupported screen rate %d", s.Rate)
+		err = fmt.Errorf("unsupported screen rate %d", requestedRate)
 	}
 
 	return s, err

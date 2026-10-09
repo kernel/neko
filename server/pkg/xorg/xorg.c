@@ -301,19 +301,33 @@ void XGetScreenConfigurations() {
   }
 }
 
+// Mirrors RRVerticalRefresh in the X server (randr/rrmode.c), which is how the
+// rates reported by XRRRates - and therefore the rates accepted by
+// XRRSetScreenConfigAndRate - are derived from a mode's timings.
+short XModeRefresh(XRRModeInfo *mode_info) {
+  unsigned long frame = (unsigned long)mode_info->hTotal * mode_info->vTotal;
+  if (frame == 0) {
+    return 0;
+  }
+  return (short)((mode_info->dotClock + frame / 2) / frame);
+}
+
 // Inspired by https://github.com/raboof/xrandr/blob/master/xrandr.c
-// width and height are in/out: on return they contain the actual dimensions
-// of the created mode (libxcvt may round width to a multiple of 8).
-void XCreateScreenMode(int *width, int *height, short rate) {
+// width, height and rate are in/out: on return they contain the actual geometry
+// of the created mode (libxcvt may round width to a multiple of 8, and its
+// 0.25 MHz dot clock steps make the realized refresh drift from the request -
+// at small resolutions by more than the 1 Hz the server reports in).
+void XCreateScreenMode(int *width, int *height, short *rate) {
   Display *display = getXDisplay();
   Window root = DefaultRootWindow(display);
 
   // create new mode info
-  XRRModeInfo *mode_info = XCreateScreenModeInfo(*width, *height, rate);
+  XRRModeInfo *mode_info = XCreateScreenModeInfo(*width, *height, *rate);
 
-  // write back the actual dimensions that were created
+  // write back the actual geometry that was created
   *width = mode_info->width;
   *height = mode_info->height;
+  *rate = XModeRefresh(mode_info);
 
   // create new mode
   RRMode mode = XRRCreateMode(display, root, mode_info);
