@@ -5,6 +5,7 @@ WORKDIR /xorg
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN set -eux; \
+    sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list; \
     apt-get update; \
     apt-get install -y \
         git gcc pkgconf autoconf automake libtool make xorg-dev xutils-dev \

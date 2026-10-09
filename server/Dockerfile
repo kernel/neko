@@ -1,14 +1,20 @@
-ARG BASE_IMAGE=golang:1.25.0
+ARG BASE_IMAGE=debian:bullseye-slim
+FROM golang:1.25.0 AS go-toolchain
 FROM $BASE_IMAGE AS server
 
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+ENV GOPATH=/go
+ENV PATH=/usr/local/go/bin:$PATH
 WORKDIR /src
 
 #
 # install dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN set -eux; \
+    sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        build-essential pkg-config git wget ca-certificates \
         libx11-dev libxrandr-dev libxtst-dev libgtk-3-dev \
         libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev; \
     #

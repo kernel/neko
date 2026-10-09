@@ -11,6 +11,7 @@ ARG USER_GID=$USER_UID
 # install dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN set -eux; \
+    sed -i 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' /etc/apt/sources.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         wget ca-certificates python2 supervisor \
