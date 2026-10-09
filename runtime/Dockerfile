@@ -11,6 +11,9 @@ ARG USER_GID=$USER_UID
 # install dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN set -eux; \
+    #
+    # bullseye has moved to archive.debian.org
+    sed -i 's|http://deb.debian.org|http://archive.debian.org|g' /etc/apt/sources.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         wget ca-certificates python2 supervisor \
