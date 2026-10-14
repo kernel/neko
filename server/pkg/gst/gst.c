@@ -1,3 +1,5 @@
+//go:build !windows
+
 #include "gst.h"
 
 #include <dlfcn.h>

@@ -1,3 +1,5 @@
+//go:build !windows
+
 #include "xorg.h"
 
 static Display *DISPLAY = NULL;

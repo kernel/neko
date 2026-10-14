@@ -1,3 +1,5 @@
+//go:build !windows
+
 package desktop
 
 import "github.com/m1k1o/neko/server/pkg/xinput"
