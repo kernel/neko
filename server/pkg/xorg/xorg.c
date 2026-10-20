@@ -229,7 +229,7 @@ void XKey(KeySym keysym, int down) {
   XSync(display, 0);
 }
 
-Status XSetScreenConfiguration(int width, int height, short rate) {
+Status XSetScreenConfiguration(int width, int height, short *rate) {
   Display *display = getXDisplay();
   Window root = DefaultRootWindow(display);
   XRRScreenConfiguration *conf = XRRGetScreenInfo(display, root);
@@ -248,11 +248,33 @@ Status XSetScreenConfiguration(int width, int height, short rate) {
 
   // if we cannot find the size
   if (size_index == -1) {
-    return RRSetConfigFailed;
+    XRRFreeScreenConfigInfo(conf);
+    return XScreenSizeNotFound;
+  }
+
+  int num_rates;
+  short *rates = XRRConfigRates(conf, size_index, &num_rates);
+  short closest_rate = 0;
+  int closest_delta = 2;
+  for (int i = 0; i < num_rates; i++) {
+    int delta = abs(rates[i] - *rate);
+    if (delta < closest_delta) {
+      closest_rate = rates[i];
+      closest_delta = delta;
+    }
+  }
+
+  // RandR rounds CVT timings to integer Hz; allow at most 1 Hz difference.
+  if (closest_delta > 1) {
+    XRRFreeScreenConfigInfo(conf);
+    return BadValue;
   }
 
   Status status;
-  status = XRRSetScreenConfigAndRate(display, conf, root, size_index, RR_Rotate_0, rate, CurrentTime);
+  status = XRRSetScreenConfigAndRate(display, conf, root, size_index, RR_Rotate_0, closest_rate, CurrentTime);
+  if (status == RRSetConfigSuccess) {
+    *rate = closest_rate;
+  }
 
   XRRFreeScreenConfigInfo(conf);
   return status;
@@ -314,6 +336,16 @@ void XCreateScreenMode(int *width, int *height, short rate) {
   // write back the actual dimensions that were created
   *width = mode_info->width;
   *height = mode_info->height;
+
+  // Reuse a size that already exists after libxcvt rounded the dimensions.
+  int num_sizes;
+  XRRScreenSize *sizes = XRRSizes(display, DefaultScreen(display), &num_sizes);
+  for (int i = 0; i < num_sizes; i++) {
+    if (sizes[i].width == *width && sizes[i].height == *height) {
+      XRRFreeModeInfo(mode_info);
+      return;
+    }
+  }
 
   // create new mode
   RRMode mode = XRRCreateMode(display, root, mode_info);
