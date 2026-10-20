@@ -1,5 +1,5 @@
 ARG BASE_IMAGE=debian:bullseye-slim
-FROM golang:1.25.0 AS go-toolchain
+FROM golang:1.26.10 AS go-toolchain
 FROM $BASE_IMAGE AS server
 
 COPY --from=go-toolchain /usr/local/go /usr/local/go
