@@ -102,6 +102,22 @@ func (m *Manager) handleDisconnect(id string) {
 	})
 }
 
+// reportLiveViewFailure publishes a capture pipeline that could not start. The
+// code is the one the dashboard classifies on, so the failure is attributable to
+// an org and a session without reading the VM's log.
+func (m *Manager) reportLiveViewFailure(sessionID, code, message string) {
+	m.enqueue(eventPayload{
+		Type:        eventLiveViewFailed,
+		Category:    categoryConnection,
+		SourceEvent: "neko.live_view.pipeline_failed",
+		Data: map[string]any{
+			"session_id": sessionID,
+			"code":       code,
+			"message":    message,
+		},
+	})
+}
+
 func (m *Manager) enqueue(ev eventPayload) {
 	select {
 	case m.eventsCh <- ev:
@@ -134,9 +150,14 @@ func (m *Manager) worker() {
 }
 
 func (m *Manager) publish(ev eventPayload) {
+	category := ev.Category
+	if category == "" {
+		category = "system"
+	}
+
 	body := publishBody{
 		Type:     ev.Type,
-		Category: "system",
+		Category: category,
 		Source: publishSource{
 			Kind:  "local_process",
 			Event: ev.SourceEvent,
@@ -169,6 +190,7 @@ func (m *Manager) publish(ev eventPayload) {
 
 type eventPayload struct {
 	Type        string
+	Category    string
 	SourceEvent string
 	Data        map[string]any
 }
