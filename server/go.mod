@@ -1,6 +1,6 @@
 module github.com/m1k1o/neko/server
 
-go 1.25.0
+go 1.26.10
 
 require (
 	github.com/PaesslerAG/gval v1.2.4
