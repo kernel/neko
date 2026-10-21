@@ -101,6 +101,26 @@ func Scroll(deltaX, deltaY int, controlKey bool) {
 	C.XScroll(C.int(deltaX), C.int(deltaY))
 }
 
+// ScrollUnits scrolls by a delta expressed in the xf86-input-neko driver's
+// scroll units rather than in wheel clicks, for the XTest fallback taken when
+// the driver is enabled but unreachable. XTest can only click whole notches,
+// so the sub-notch remainder is carried to the next call instead of being
+// replayed once per unit. Its caller latches the Control modifier around the
+// driver attempt. Legacy clients can also hold Control through key events,
+// so select the accumulator using the effective X server modifier state.
+func ScrollUnits(deltaX, deltaY int, controlKey bool) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	controlKey = controlKey || C.XGetKeyboardModifiers()&C.ControlMask != 0
+	notchesX, notchesY := scrollResidualFor(controlKey).add(deltaX, deltaY)
+	if notchesX == 0 && notchesY == 0 {
+		return
+	}
+
+	C.XScroll(C.int(notchesX), C.int(notchesY))
+}
+
 func ButtonDown(code uint32) error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -170,6 +190,8 @@ func ResetKeys() {
 		C.XKey(C.KeySym(code), C.int(0))
 		delete(debounce_key, code)
 	}
+
+	resetScrollResiduals()
 }
 
 func CheckKeys(duration time.Duration) {
