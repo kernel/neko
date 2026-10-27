@@ -17,10 +17,9 @@ var (
 )
 
 func (h *MessageHandlerCtx) controlRelease(session types.Session) error {
-	// Disabled: profile check
-	// if !session.Profile().CanHost || session.PrivateModeEnabled() {
-	// 	return ErrIsNotAllowedToHost
-	// }
+	if !session.Profile().CanHost {
+		return ErrIsNotAllowedToHost
+	}
 
 	// Disabled: is host check
 	// if !session.IsHost() {
