@@ -1,13 +1,17 @@
 package handler
 
 import (
-	// "errors"
+	"errors"
 
 	"github.com/m1k1o/neko/server/pkg/types"
 	"github.com/m1k1o/neko/server/pkg/types/message"
 )
 
 func (h *MessageHandlerCtx) keyboardMap(session types.Session, payload *message.KeyboardMap) error {
+	if !session.Profile().CanHost {
+		return errors.New("is not allowed to host")
+	}
+
 	// Disabled: is host check
 	// if !session.IsHost() {
 	// 	return errors.New("is not the host")
@@ -17,6 +21,10 @@ func (h *MessageHandlerCtx) keyboardMap(session types.Session, payload *message.
 }
 
 func (h *MessageHandlerCtx) keyboardModifiers(session types.Session, payload *message.KeyboardModifiers) error {
+	if !session.Profile().CanHost {
+		return errors.New("is not allowed to host")
+	}
+
 	// Disabled: is host check
 	// if !session.IsHost() {
 	// 	return errors.New("is not the host")
