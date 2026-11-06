@@ -303,7 +303,7 @@ void XGetScreenConfigurations() {
 
 // Inspired by https://github.com/raboof/xrandr/blob/master/xrandr.c
 // width and height are in/out: on return they contain the actual dimensions
-// of the created mode (libxcvt may round width to a multiple of 8).
+// of the created mode.
 void XCreateScreenMode(int *width, int *height, short rate) {
   Display *display = getXDisplay();
   Window root = DefaultRootWindow(display);
@@ -331,22 +331,27 @@ void XCreateScreenMode(int *width, int *height, short rate) {
 
 // Inspired by https://fossies.org/linux/xwayland/hw/xwayland/xwayland-cvt.c
 XRRModeInfo *XCreateScreenModeInfo(int hdisplay, int vdisplay, short vrefresh) {
+  char name[128];
+  snprintf(name, sizeof name, "%dx%d_%d", hdisplay, vdisplay, vrefresh);
+  XRRModeInfo *modeinfo = XRRAllocModeInfo(name, strlen(name));
+
+  modeinfo->width  = hdisplay;
+  modeinfo->height = vdisplay;
+
 #ifdef _LIBCVT_H_
   struct libxcvt_mode_info *mode_info;
 
-  // get screen mode from libxcvt, if available
-  // NOTE: libxcvt may round hdisplay up to a multiple of 8 (CVT convention).
-  // We use the actual output dimensions for both the mode name and geometry
-  // so that they are consistent.
-  mode_info = libxcvt_gen_mode_info(hdisplay, vdisplay, vrefresh, false, false);
+  // libxcvt rounds hdisplay down to a multiple of 8 (CVT convention). Generate
+  // the timings for the width rounded up instead, so the requested width fits
+  // inside the active area and the mode keeps the exact requested size.
+  int hdisplay_cvt = (hdisplay + 7) & ~7;
+  mode_info = libxcvt_gen_mode_info(hdisplay_cvt, vdisplay, vrefresh, false, false);
 
-  char name[128];
-  snprintf(name, sizeof name, "%dx%d_%d", mode_info->hdisplay, mode_info->vdisplay, vrefresh);
-  XRRModeInfo *modeinfo = XRRAllocModeInfo(name, strlen(name));
-
-  modeinfo->width      = mode_info->hdisplay;
-  modeinfo->height     = mode_info->vdisplay;
-  modeinfo->dotClock   = mode_info->dot_clock * 1000;
+  // libxcvt also rounds the pixel clock down to a multiple of 250 kHz. On small
+  // modes that lowers the refresh rate enough for X to round it to vrefresh - 1
+  // (e.g. 1008x384 at 60 Hz becomes 59.45 Hz), and XRRSetScreenConfigAndRate
+  // then rejects vrefresh with BadValue. Use the exact clock for vrefresh.
+  modeinfo->dotClock   = (unsigned long) mode_info->htotal * mode_info->vtotal * vrefresh;
   modeinfo->hSyncStart = mode_info->hsync_start;
   modeinfo->hSyncEnd   = mode_info->hsync_end;
   modeinfo->hTotal     = mode_info->htotal;
@@ -356,14 +361,6 @@ XRRModeInfo *XCreateScreenModeInfo(int hdisplay, int vdisplay, short vrefresh) {
   modeinfo->modeFlags  = mode_info->mode_flags;
 
   free(mode_info);
-#else
-  // fallback to a simple mode without refresh rate
-  char name[128];
-  snprintf(name, sizeof name, "%dx%d_%d", hdisplay, vdisplay, vrefresh);
-  XRRModeInfo *modeinfo = XRRAllocModeInfo(name, strlen(name));
-
-  modeinfo->width = hdisplay;
-  modeinfo->height = vdisplay;
 #endif
 
   return modeinfo;

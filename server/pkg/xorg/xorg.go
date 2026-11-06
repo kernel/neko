@@ -239,6 +239,32 @@ func ChangeScreenSize(s types.ScreenSize) (types.ScreenSize, error) {
 	return s, err
 }
 
+type screenModeInfo struct {
+	Width, Height                int
+	HSyncStart, HSyncEnd, HTotal int
+	VSyncStart, VSyncEnd, VTotal int
+	DotClock                     uint64
+}
+
+// newScreenModeInfo returns the mode XCreateScreenMode would create, without
+// adding it to the X server. Tests use it because they cannot call cgo directly.
+func newScreenModeInfo(width, height int, rate int16) screenModeInfo {
+	info := C.XCreateScreenModeInfo(C.int(width), C.int(height), C.short(rate))
+	defer C.XRRFreeModeInfo(info)
+
+	return screenModeInfo{
+		Width:      int(info.width),
+		Height:     int(info.height),
+		HSyncStart: int(info.hSyncStart),
+		HSyncEnd:   int(info.hSyncEnd),
+		HTotal:     int(info.hTotal),
+		VSyncStart: int(info.vSyncStart),
+		VSyncEnd:   int(info.vSyncEnd),
+		VTotal:     int(info.vTotal),
+		DotClock:   uint64(info.dotClock),
+	}
+}
+
 func GetScreenSize() types.ScreenSize {
 	mu.Lock()
 	defer mu.Unlock()
