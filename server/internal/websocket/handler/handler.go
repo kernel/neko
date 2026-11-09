@@ -4,6 +4,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/m1k1o/neko/server/internal/plugins/telemetry"
 	"github.com/m1k1o/neko/server/pkg/types"
 	"github.com/m1k1o/neko/server/pkg/types/event"
 	"github.com/m1k1o/neko/server/pkg/types/message"
@@ -202,6 +203,13 @@ func (h *MessageHandlerCtx) Message(session types.Session, data types.WebSocketM
 			Str("event", data.Event).
 			Str("session_id", session.ID()).
 			Msg("message handler has failed")
+
+		// A failed signal request is how a capture pipeline that cannot start
+		// reaches the viewer: the encoder is unavailable, so no frames render and
+		// the client has nothing to report.
+		if data.Event == event.SIGNAL_REQUEST {
+			telemetry.ReportLiveViewFailure(session.ID(), err)
+		}
 	}
 
 	return true

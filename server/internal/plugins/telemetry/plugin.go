@@ -25,9 +25,11 @@ func (p *Plugin) Config() types.PluginConfig {
 
 func (p *Plugin) Start(m types.PluginManagers) error {
 	p.manager = NewManager(m.SessionManager, p.config)
+	setReporter(p.manager.reportLiveViewFailure)
 	return p.manager.Start()
 }
 
 func (p *Plugin) Shutdown() error {
+	setReporter(nil)
 	return p.manager.Shutdown()
 }
