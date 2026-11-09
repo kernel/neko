@@ -70,6 +70,8 @@ jobs:
             libxfixes-dev
             libxcvt-dev
             pkg-config
+            xvfb
+            xauth
           version: ${{ runner.os }}-ubuntu-24.04
 
       - name: Install system dependencies
@@ -84,7 +86,7 @@ jobs:
             libxtst-dev \
             libxfixes-dev \
             libxcvt-dev \
-            pkg-config
+            pkg-config xvfb xauth
 
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -98,3 +100,9 @@ jobs:
       - name: Run tests
         working-directory: server
         run: go test ./... -v
+
+      - name: Test XTest scroll fallback on an isolated display
+        working-directory: server
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24 -nolisten tcp" \
+            sh -c 'NEKO_XORG_TEST_DISPLAY="$DISPLAY" go test -race ./internal/desktop -run TestScrollXorgIntegration -count=1 -v'
