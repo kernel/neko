@@ -48,6 +48,12 @@ const (
 	rtcpPLIInterval = 3 * time.Second
 )
 
+type iceCandidateLogFields struct {
+	candidateType string
+	protocol      string
+	addressFamily string
+}
+
 func New(desktop types.DesktopManager, capture types.CaptureManager, config *config.WebRTC) *WebRTCManagerCtx {
 	logger := log.With().Str("module", "webrtc").Logger()
 
@@ -266,6 +272,110 @@ func (manager *WebRTCManagerCtx) newPeerConnection(logger zerolog.Logger, codecs
 	return connection, <-estimatorChan, err
 }
 
+func summarizeICECandidate(candidate string) iceCandidateLogFields {
+	fields := strings.Fields(candidate)
+	summary := iceCandidateLogFields{
+		candidateType: "unknown",
+		protocol:      "unknown",
+		addressFamily: "unknown",
+	}
+
+	if len(fields) >= 3 {
+		summary.protocol = strings.ToLower(fields[2])
+	}
+
+	if len(fields) >= 5 {
+		ip := net.ParseIP(fields[4])
+		if ip != nil {
+			if ip.To4() != nil {
+				summary.addressFamily = "ipv4"
+			} else {
+				summary.addressFamily = "ipv6"
+			}
+		}
+	}
+
+	for i := 0; i < len(fields)-1; i++ {
+		if fields[i] == "typ" {
+			summary.candidateType = fields[i+1]
+			break
+		}
+	}
+
+	return summary
+}
+
+func logICECandidate(event *zerolog.Event, prefix string, summary iceCandidateLogFields) *zerolog.Event {
+	return event.
+		Str(prefix+"_candidate_type", summary.candidateType).
+		Str(prefix+"_protocol", summary.protocol).
+		Str(prefix+"_address_family", summary.addressFamily)
+}
+
+func logSelectedICECandidatePair(logger zerolog.Logger, connection *webrtc.PeerConnection) {
+	stats := connection.GetStats()
+
+	localCandidates := map[string]webrtc.ICECandidateStats{}
+	remoteCandidates := map[string]webrtc.ICECandidateStats{}
+	pairs := []webrtc.ICECandidatePairStats{}
+
+	for _, entry := range stats {
+		if candidate, ok := entry.(webrtc.ICECandidateStats); ok {
+			switch candidate.Type {
+			case webrtc.StatsTypeLocalCandidate:
+				localCandidates[candidate.ID] = candidate
+			case webrtc.StatsTypeRemoteCandidate:
+				remoteCandidates[candidate.ID] = candidate
+			}
+			continue
+		}
+
+		if pair, ok := entry.(webrtc.ICECandidatePairStats); ok && pair.Nominated {
+			pairs = append(pairs, pair)
+		}
+	}
+
+	for _, pair := range pairs {
+		event := logger.Info().
+			Str("candidate_pair_id", pair.ID).
+			Str("candidate_pair_state", fmt.Sprint(pair.State)).
+			Bool("candidate_pair_nominated", pair.Nominated).
+			Uint64("bytes_sent", pair.BytesSent).
+			Uint64("bytes_received", pair.BytesReceived)
+
+		if local, ok := localCandidates[pair.LocalCandidateID]; ok {
+			event = event.
+				Str("local_candidate_type", local.CandidateType.String()).
+				Str("local_protocol", local.Protocol).
+				Str("local_address_family", addressFamily(local.IP)).
+				Int32("local_port", local.Port).
+				Str("local_relay_protocol", local.RelayProtocol)
+		}
+
+		if remote, ok := remoteCandidates[pair.RemoteCandidateID]; ok {
+			event = event.
+				Str("remote_candidate_type", remote.CandidateType.String()).
+				Str("remote_protocol", remote.Protocol).
+				Str("remote_address_family", addressFamily(remote.IP)).
+				Int32("remote_port", remote.Port).
+				Str("remote_relay_protocol", remote.RelayProtocol)
+		}
+
+		event.Msg("webrtc selected ice candidate pair")
+	}
+}
+
+func addressFamily(rawIP string) string {
+	ip := net.ParseIP(rawIP)
+	if ip == nil {
+		return "unknown"
+	}
+	if ip.To4() != nil {
+		return "ipv4"
+	}
+	return "ipv6"
+}
+
 func (manager *WebRTCManagerCtx) CreatePeer(session types.Session) (*webrtc.SessionDescription, types.WebRTCPeer, error) {
 	id := atomic.AddInt32(&manager.peerId, 1)
 
@@ -295,14 +405,18 @@ func (manager *WebRTCManagerCtx) CreatePeer(session types.Session) (*webrtc.Sess
 	if manager.config.ICETrickle {
 		connection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 			if candidate == nil {
-				logger.Debug().Msg("all local ice candidates sent")
+				logger.Info().Msg("all local ice candidates sent")
 				return
 			}
+
+			candidateInit := candidate.ToJSON()
+			logICECandidate(logger.Info(), "local", summarizeICECandidate(candidateInit.Candidate)).
+				Msg("sending local ice candidate")
 
 			session.Send(
 				event.SIGNAL_CANDIDATE,
 				message.SignalCandidate{
-					ICECandidateInit: candidate.ToJSON(),
+					ICECandidateInit: candidateInit,
 				})
 		})
 	}
@@ -490,10 +604,17 @@ func (manager *WebRTCManagerCtx) CreatePeer(session types.Session) (*webrtc.Sess
 	})
 
 	var once sync.Once
+	connection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		logger.Info().
+			Str("ice_connection_state", state.String()).
+			Msg("webrtc ice connection state changed")
+	})
+
 	connection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
 		case webrtc.PeerConnectionStateConnected:
 			session.SetWebRTCConnected(peer, true)
+			logSelectedICECandidatePair(logger, connection)
 		case webrtc.PeerConnectionStateDisconnected,
 			webrtc.PeerConnectionStateFailed:
 			peer.Destroy()
