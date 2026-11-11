@@ -22,9 +22,12 @@ type Track struct {
 	sample chan types.Sample
 
 	paused   bool
+	closed   bool
 	stream   types.StreamSinkManager
 	streamMu sync.Mutex
 }
+
+var ErrTrackClosed = errors.New("track is closed")
 
 type trackOption func(*Track)
 
@@ -64,6 +67,10 @@ func NewTrack(logger zerolog.Logger, codec codec.RTPCodec, connection *webrtc.Pe
 }
 
 func (t *Track) Shutdown() {
+	t.streamMu.Lock()
+	t.closed = true
+	t.streamMu.Unlock()
+
 	t.RemoveStream()
 	close(t.sample)
 }
@@ -118,6 +125,13 @@ func (t *Track) WriteSample(sample types.Sample) {
 func (t *Track) SetStream(stream types.StreamSinkManager) (bool, error) {
 	t.streamMu.Lock()
 	defer t.streamMu.Unlock()
+
+	// A peer can be destroyed while it is still being set up. A listener added
+	// after that would never be removed, and its samples would be written to a
+	// closed channel.
+	if t.closed {
+		return false, ErrTrackClosed
+	}
 
 	// if we already listen to the stream, do nothing
 	if t.stream == stream {
