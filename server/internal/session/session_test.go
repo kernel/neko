@@ -85,6 +85,16 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 			wantDestroyed: 0,
 		},
 		{
+			name:      "websocket closes while the peer is streaming and was set again",
+			connected: true,
+			end: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
+				session.SetWebRTCPeer(session.GetWebRTCPeer())
+				session.DisconnectWebSocketPeer(websocket, false)
+				return nil
+			},
+			wantDestroyed: 0,
+		},
+		{
 			name: "websocket drops and may still reconnect",
 			end: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
 				session.DisconnectWebSocketPeer(websocket, true)
@@ -205,6 +215,54 @@ func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
 			peer := &fakeWebRTCPeer{}
 			session.SetWebRTCPeer(peer)
 
+			if peer.destroyed != tt.wantDestroyed {
+				t.Errorf("peer destroyed %d times, want %d", peer.destroyed, tt.wantDestroyed)
+			}
+		})
+	}
+}
+
+// A client that is watching can ask for media again, which replaces its peer.
+// The session goes on counting as watching, because the closing of a replaced
+// peer is ignored, but the new peer has not connected.
+func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *testing.T) {
+	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+	tests := []struct {
+		name          string
+		connected     bool
+		wantDestroyed int
+	}{
+		{name: "websocket closes before the new peer connects", wantDestroyed: 1},
+		{name: "websocket closes while the new peer is streaming", connected: true, wantDestroyed: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := New(&config.Session{})
+			session, _, err := manager.Create("member", profile)
+			if err != nil {
+				t.Fatalf("create session: %v", err)
+			}
+			websocket := &fakeWebSocketPeer{}
+			session.ConnectWebSocketPeer(websocket)
+			replaced := &fakeWebRTCPeer{}
+			session.SetWebRTCPeer(replaced)
+			session.SetWebRTCConnected(replaced, true)
+
+			peer := &fakeWebRTCPeer{}
+			session.SetWebRTCPeer(peer)
+			if tt.connected {
+				session.SetWebRTCConnected(peer, true)
+			}
+			// the replaced peer reports its closing whenever it gets to it
+			session.SetWebRTCConnected(replaced, false)
+
+			session.DisconnectWebSocketPeer(websocket, false)
+
+			if replaced.destroyed != 1 {
+				t.Errorf("replaced peer destroyed %d times, want 1", replaced.destroyed)
+			}
 			if peer.destroyed != tt.wantDestroyed {
 				t.Errorf("peer destroyed %d times, want %d", peer.destroyed, tt.wantDestroyed)
 			}

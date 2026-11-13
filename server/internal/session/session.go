@@ -30,7 +30,10 @@ type SessionCtx struct {
 	wsDelayedTimer *time.Timer
 
 	webrtcPeer types.WebRTCPeer
-	webrtcMu   sync.Mutex
+	// whether webrtcPeer has connected; unlike state.IsWatching this is never
+	// left over from a peer that was replaced
+	webrtcConnected bool
+	webrtcMu        sync.Mutex
 }
 
 func (session *SessionCtx) ID() string {
@@ -149,6 +152,8 @@ func (session *SessionCtx) ConnectWebSocketPeer(websocketPeer types.WebSocketPee
 // but after a delay. If the peer is connected again before the delay, the disconnect will be
 // cancelled.
 //
+// A WebRTC peer that has not connected is destroyed with the websocket peer.
+//
 // If the peer is not the current peer or the peer is nil, it will be ignored.
 func (session *SessionCtx) DisconnectWebSocketPeer(websocketPeer types.WebSocketPeer, delayed bool) {
 	session.websocketMu.Lock()
@@ -227,11 +232,11 @@ func (session *SessionCtx) DisconnectWebSocketPeer(websocketPeer types.WebSocket
 // must be set before SetWebRTCPeer looks at the websocket peer. That order
 // makes sure one of the two sees the other, whichever happens first.
 func (session *SessionCtx) destroyPendingWebRTCPeer() {
-	if session.state.IsWatching {
-		return
-	}
+	session.webrtcMu.Lock()
+	webrtcPeer, connected := session.webrtcPeer, session.webrtcConnected
+	session.webrtcMu.Unlock()
 
-	if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil {
+	if webrtcPeer != nil && !connected {
 		webrtcPeer.Destroy()
 	}
 }
@@ -272,6 +277,9 @@ func (session *SessionCtx) Send(event string, payload any) {
 // Set webrtc peer and destroy the old one, if there is old one.
 func (session *SessionCtx) SetWebRTCPeer(webrtcPeer types.WebRTCPeer) {
 	session.webrtcMu.Lock()
+	if webrtcPeer != session.webrtcPeer {
+		session.webrtcConnected = false
+	}
 	session.webrtcPeer, webrtcPeer = webrtcPeer, session.webrtcPeer
 	session.webrtcMu.Unlock()
 
@@ -299,6 +307,9 @@ func (session *SessionCtx) SetWebRTCPeer(webrtcPeer types.WebRTCPeer) {
 func (session *SessionCtx) SetWebRTCConnected(webrtcPeer types.WebRTCPeer, connected bool) {
 	session.webrtcMu.Lock()
 	isCurrentPeer := webrtcPeer == session.webrtcPeer
+	if isCurrentPeer {
+		session.webrtcConnected = connected
+	}
 	session.webrtcMu.Unlock()
 
 	if !isCurrentPeer {
