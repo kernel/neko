@@ -30,7 +30,10 @@ type SessionCtx struct {
 	wsDelayedTimer *time.Timer
 
 	webrtcPeer types.WebRTCPeer
-	webrtcMu   sync.Mutex
+	// whether webrtcPeer has connected; unlike state.IsWatching this is never
+	// left over from a peer that was replaced
+	webrtcConnected bool
+	webrtcMu        sync.Mutex
 }
 
 func (session *SessionCtx) ID() string {
@@ -149,6 +152,8 @@ func (session *SessionCtx) ConnectWebSocketPeer(websocketPeer types.WebSocketPee
 // but after a delay. If the peer is connected again before the delay, the disconnect will be
 // cancelled.
 //
+// A WebRTC peer that has not connected is destroyed with the websocket peer.
+//
 // If the peer is not the current peer or the peer is nil, it will be ignored.
 func (session *SessionCtx) DisconnectWebSocketPeer(websocketPeer types.WebSocketPeer, delayed bool) {
 	session.websocketMu.Lock()
@@ -212,6 +217,28 @@ func (session *SessionCtx) DisconnectWebSocketPeer(websocketPeer types.WebSocket
 		session.websocketPeer = nil
 	}
 	session.websocketMu.Unlock()
+
+	// A WebRTC peer that has not connected yet needs this websocket to do so:
+	// it carries the answer and the candidates. Without it the peer would stay
+	// half-open for good and keep the capture pipelines it subscribed to
+	// running with nobody watching.
+	session.destroyPendingWebRTCPeer()
+}
+
+// Destroy the WebRTC peer if it exists but has not connected. A connected peer
+// is left alone: it does not need the websocket to keep streaming.
+//
+// The websocket peer must be cleared before this is called, and a WebRTC peer
+// must be set before SetWebRTCPeer looks at the websocket peer. That order
+// makes sure one of the two sees the other, whichever happens first.
+func (session *SessionCtx) destroyPendingWebRTCPeer() {
+	session.webrtcMu.Lock()
+	webrtcPeer, connected := session.webrtcPeer, session.webrtcConnected
+	session.webrtcMu.Unlock()
+
+	if webrtcPeer != nil && !connected {
+		webrtcPeer.Destroy()
+	}
 }
 
 // Destroy WebSocket peer disconnects the peer and destroys it. It ensures that the peer is
@@ -250,11 +277,24 @@ func (session *SessionCtx) Send(event string, payload any) {
 // Set webrtc peer and destroy the old one, if there is old one.
 func (session *SessionCtx) SetWebRTCPeer(webrtcPeer types.WebRTCPeer) {
 	session.webrtcMu.Lock()
+	if webrtcPeer != session.webrtcPeer {
+		session.webrtcConnected = false
+	}
 	session.webrtcPeer, webrtcPeer = webrtcPeer, session.webrtcPeer
 	session.webrtcMu.Unlock()
 
 	if webrtcPeer != nil && webrtcPeer != session.webrtcPeer {
 		webrtcPeer.Destroy()
+	}
+
+	// The websocket can go away while a peer is being created for it. Its
+	// disconnect found no peer to destroy then, so it is done here.
+	session.websocketMu.Lock()
+	hasWebSocket := session.websocketPeer != nil
+	session.websocketMu.Unlock()
+
+	if !hasWebSocket {
+		session.destroyPendingWebRTCPeer()
 	}
 }
 
@@ -267,6 +307,9 @@ func (session *SessionCtx) SetWebRTCPeer(webrtcPeer types.WebRTCPeer) {
 func (session *SessionCtx) SetWebRTCConnected(webrtcPeer types.WebRTCPeer, connected bool) {
 	session.webrtcMu.Lock()
 	isCurrentPeer := webrtcPeer == session.webrtcPeer
+	if isCurrentPeer {
+		session.webrtcConnected = connected
+	}
 	session.webrtcMu.Unlock()
 
 	if !isCurrentPeer {
