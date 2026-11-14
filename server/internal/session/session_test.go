@@ -1,6 +1,7 @@
 package session
 
 import (
+	"runtime"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -352,5 +353,45 @@ func TestWebRTCPeerOfAWebSocketThatTookOverIsKept(t *testing.T) {
 
 	if peer.destroyed {
 		t.Error("peer of the websocket that took over was destroyed")
+	}
+}
+
+// The new websocket can also connect after the old one was cleared from the
+// session, and ask for a peer before the old one looks for a peer to destroy.
+func TestWebRTCPeerOfAWebSocketThatConnectedAfterTheOldOneWasClearedIsKept(t *testing.T) {
+	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+	manager := New(&config.Session{})
+	created, _, err := manager.Create("member", profile)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	session := created.(*SessionCtx)
+	websocket := &fakeWebSocketPeer{}
+	session.ConnectWebSocketPeer(websocket)
+
+	// holds the old websocket where it looks for a peer to destroy
+	session.webrtcMu.Lock()
+	disconnected := make(chan struct{})
+	go func() {
+		defer close(disconnected)
+		session.DisconnectWebSocketPeer(websocket, false)
+	}()
+	for cleared := false; !cleared; {
+		session.websocketMu.Lock()
+		cleared = session.websocketPeer == nil
+		session.websocketMu.Unlock()
+		runtime.Gosched()
+	}
+
+	// the lock is held, so the peer is set as SetWebRTCPeer would set it
+	session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
+	peer := &fakeWebRTCPeer{}
+	session.webrtcPeer, session.webrtcConnected = peer, false
+	session.webrtcMu.Unlock()
+	<-disconnected
+
+	if peer.destroyed {
+		t.Error("peer of the websocket that connected was destroyed")
 	}
 }
