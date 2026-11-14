@@ -2,6 +2,7 @@ package webrtc
 
 import (
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/pion/webrtc/v3"
@@ -15,17 +16,37 @@ import (
 // these tests must not reach any other method.
 type listenerCountingStream struct {
 	types.StreamSinkManager
+	codec codec.RTPCodec
+
+	mu             sync.Mutex
 	added, removed int
 }
 
+func (s *listenerCountingStream) ID() string { return "test" }
+
+func (s *listenerCountingStream) Codec() codec.RTPCodec { return s.codec }
+
 func (s *listenerCountingStream) AddListener(types.SampleListener) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.added++
 	return nil
 }
 
 func (s *listenerCountingStream) RemoveListener(types.SampleListener) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.removed++
 	return nil
+}
+
+func (s *listenerCountingStream) listeners() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.added - s.removed
 }
 
 func newTestTrack(t *testing.T) *Track {
