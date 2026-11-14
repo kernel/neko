@@ -69,8 +69,24 @@ func TestTrackDoesNotListenAfterShutdown(t *testing.T) {
 	if _, err := track.SetStream(stream); !errors.Is(err, ErrTrackClosed) {
 		t.Errorf("set stream after shutdown returned %v, want %v", err, ErrTrackClosed)
 	}
-	// unpausing is what starts audio
+
+	if stream.added != 0 {
+		t.Errorf("listener added %d times after shutdown, want 0", stream.added)
+	}
+}
+
+// The audio track gets its stream while it is paused, when the peer is
+// created, and only listens once it is unpaused. That can come after the peer
+// was destroyed.
+func TestPausedTrackDoesNotListenAfterShutdown(t *testing.T) {
+	track := newTestTrack(t)
+	stream := &listenerCountingStream{}
+
 	track.SetPaused(true)
+	if _, err := track.SetStream(stream); err != nil {
+		t.Fatalf("set stream: %v", err)
+	}
+	track.Shutdown()
 	track.SetPaused(false)
 
 	if stream.added != 0 {
