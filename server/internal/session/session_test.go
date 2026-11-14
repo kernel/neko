@@ -269,3 +269,33 @@ func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *test
 		})
 	}
 }
+
+// A closing peer is cleared from the session on another goroutine. A session
+// that is deleted or disconnected at that moment can still count as watching
+// with no peer left to destroy.
+func TestSessionThatCountsAsWatchingWithoutAPeerCanBeEnded(t *testing.T) {
+	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+	tests := []struct {
+		name string
+		end  func(manager *SessionManagerCtx, id string) error
+	}{
+		{name: "session is deleted", end: (*SessionManagerCtx).Delete},
+		{name: "session is disconnected", end: (*SessionManagerCtx).Disconnect},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := New(&config.Session{})
+			session, _, err := manager.Create("member", profile)
+			if err != nil {
+				t.Fatalf("create session: %v", err)
+			}
+			session.(*SessionCtx).state.IsWatching = true
+
+			if err := tt.end(manager, session.ID()); err != nil {
+				t.Fatalf("end session: %v", err)
+			}
+		})
+	}
+}

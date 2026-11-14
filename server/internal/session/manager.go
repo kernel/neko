@@ -159,8 +159,9 @@ func (manager *SessionManagerCtx) Delete(id string) error {
 		session.DestroyWebSocketPeer("session deleted")
 	}
 
-	if session.State().IsWatching {
-		session.GetWebRTCPeer().Destroy()
+	// a closing peer is cleared from another goroutine, so it can be gone already
+	if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil && session.State().IsWatching {
+		webrtcPeer.Destroy()
 	}
 
 	manager.emmiter.Emit("deleted", session)
@@ -182,8 +183,9 @@ func (manager *SessionManagerCtx) Disconnect(id string) error {
 		session.DestroyWebSocketPeer("session disconnected")
 	}
 
-	if session.State().IsWatching {
-		session.GetWebRTCPeer().Destroy()
+	// a closing peer is cleared from another goroutine, so it can be gone already
+	if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil && session.State().IsWatching {
+		webrtcPeer.Destroy()
 	}
 
 	return nil
