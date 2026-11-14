@@ -40,7 +40,8 @@ func TestLegacyIsHost(t *testing.T) {
 	}
 }
 
-type fakeWebSocketPeer struct{}
+// Not empty, so that two of them are never the same pointer.
+type fakeWebSocketPeer struct{ _ bool }
 
 func (fakeWebSocketPeer) Send(event string, payload any) {}
 func (fakeWebSocketPeer) Ping() error                    { return nil }
@@ -297,5 +298,32 @@ func TestSessionThatCountsAsWatchingWithoutAPeerCanBeEnded(t *testing.T) {
 				t.Fatalf("end session: %v", err)
 			}
 		})
+	}
+}
+
+// A client can be back on a new websocket before the old one is done leaving,
+// because the session's listeners run in between. A peer the new websocket
+// asked for is not the old one's to destroy.
+func TestWebRTCPeerOfAWebSocketThatTookOverIsKept(t *testing.T) {
+	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+	manager := New(&config.Session{})
+	session, _, err := manager.Create("member", profile)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	websocket := &fakeWebSocketPeer{}
+	session.ConnectWebSocketPeer(websocket)
+
+	peer := &fakeWebRTCPeer{}
+	manager.OnDisconnected(func(session types.Session) {
+		session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
+		session.SetWebRTCPeer(peer)
+	})
+
+	session.DisconnectWebSocketPeer(websocket, false)
+
+	if peer.destroyed != 0 {
+		t.Errorf("peer destroyed %d times, want 0", peer.destroyed)
 	}
 }

@@ -213,7 +213,8 @@ func (session *SessionCtx) DisconnectWebSocketPeer(websocketPeer types.WebSocket
 	session.manager.emmiter.Emit("disconnected", session)
 
 	session.websocketMu.Lock()
-	if websocketPeer == session.websocketPeer {
+	isCurrentPeer = websocketPeer == session.websocketPeer
+	if isCurrentPeer {
 		session.websocketPeer = nil
 	}
 	session.websocketMu.Unlock()
@@ -222,7 +223,12 @@ func (session *SessionCtx) DisconnectWebSocketPeer(websocketPeer types.WebSocket
 	// it carries the answer and the candidates. Without it the peer would stay
 	// half-open for good and keep the capture pipelines it subscribed to
 	// running with nobody watching.
-	session.destroyPendingWebRTCPeer()
+	//
+	// Another websocket may have connected while the listeners above ran. The
+	// peer is then left for that websocket to finish.
+	if isCurrentPeer {
+		session.destroyPendingWebRTCPeer()
+	}
 }
 
 // Destroy the WebRTC peer if it exists but has not connected. A connected peer
