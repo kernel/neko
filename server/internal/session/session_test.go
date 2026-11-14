@@ -2,6 +2,8 @@ package session
 
 import (
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/m1k1o/neko/server/internal/config"
 	"github.com/m1k1o/neko/server/pkg/types"
@@ -299,6 +301,30 @@ func TestSessionThatCountsAsWatchingWithoutAPeerCanBeEnded(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A session that may no longer connect has its peer destroyed a moment after
+// its websocket. The websocket takes a peer that has not connected with it,
+// so a session that counts as watching can have no peer left by then.
+func TestSessionThatCountsAsWatchingWithoutAPeerCanLoseItsLogin(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+		manager := New(&config.Session{})
+		session, _, err := manager.Create("member", profile)
+		if err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+		session.(*SessionCtx).state.IsWatching = true
+
+		profile.CanLogin = false
+		if err := manager.Update(session.ID(), profile); err != nil {
+			t.Fatalf("update session: %v", err)
+		}
+
+		// the peer is destroyed from a timer
+		time.Sleep(2 * time.Second)
+	})
 }
 
 // A client can be back on a new websocket before the old one is done leaving,
