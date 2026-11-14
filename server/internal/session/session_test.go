@@ -49,14 +49,15 @@ func (fakeWebSocketPeer) Send(event string, payload any) {}
 func (fakeWebSocketPeer) Ping() error                    { return nil }
 func (fakeWebSocketPeer) Destroy(reason string)          {}
 
-// fakeWebRTCPeer counts how often it was destroyed. The embedded interface is
-// nil: these tests must not reach any other method.
+// fakeWebRTCPeer records whether it was destroyed. Like the real peer it can
+// be destroyed more than once. The embedded interface is nil: these tests
+// must not reach any other method.
 type fakeWebRTCPeer struct {
 	types.WebRTCPeer
-	destroyed int
+	destroyed bool
 }
 
-func (p *fakeWebRTCPeer) Destroy() { p.destroyed++ }
+func (p *fakeWebRTCPeer) Destroy() { p.destroyed = true }
 
 // A client can ask for media and vanish before it answers the offer. Its peer
 // never connects, so nothing but the session can end it; left alone it keeps
@@ -68,7 +69,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 		name          string
 		connected     bool
 		end           func(manager *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error
-		wantDestroyed int
+		wantDestroyed bool
 	}{
 		{
 			name: "websocket closes before the peer connects",
@@ -76,7 +77,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 				session.DisconnectWebSocketPeer(websocket, false)
 				return nil
 			},
-			wantDestroyed: 1,
+			wantDestroyed: true,
 		},
 		{
 			name:      "websocket closes while the peer is streaming",
@@ -85,7 +86,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 				session.DisconnectWebSocketPeer(websocket, false)
 				return nil
 			},
-			wantDestroyed: 0,
+			wantDestroyed: false,
 		},
 		{
 			name:      "websocket closes while the peer is streaming and was set again",
@@ -95,7 +96,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 				session.DisconnectWebSocketPeer(websocket, false)
 				return nil
 			},
-			wantDestroyed: 0,
+			wantDestroyed: false,
 		},
 		{
 			name: "websocket drops and may still reconnect",
@@ -103,21 +104,21 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 				session.DisconnectWebSocketPeer(websocket, true)
 				return nil
 			},
-			wantDestroyed: 0,
+			wantDestroyed: false,
 		},
 		{
 			name: "session is deleted before the peer connects",
 			end: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
 				return manager.Delete(session.ID())
 			},
-			wantDestroyed: 1,
+			wantDestroyed: true,
 		},
 		{
 			name: "session is disconnected before the peer connects",
 			end: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
 				return manager.Disconnect(session.ID())
 			},
-			wantDestroyed: 1,
+			wantDestroyed: true,
 		},
 		{
 			name:      "session is deleted while the peer is streaming",
@@ -125,7 +126,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 			end: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
 				return manager.Delete(session.ID())
 			},
-			wantDestroyed: 1,
+			wantDestroyed: true,
 		},
 	}
 
@@ -151,7 +152,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 			}
 
 			if peer.destroyed != tt.wantDestroyed {
-				t.Errorf("peer destroyed %d times, want %d", peer.destroyed, tt.wantDestroyed)
+				t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
 			}
 		})
 	}
@@ -166,14 +167,14 @@ func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
 	tests := []struct {
 		name          string
 		leave         func(manager *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error
-		wantDestroyed int
+		wantDestroyed bool
 	}{
 		{
 			name: "websocket still connected",
 			leave: func(*SessionManagerCtx, types.Session, types.WebSocketPeer) error {
 				return nil
 			},
-			wantDestroyed: 0,
+			wantDestroyed: false,
 		},
 		{
 			name: "websocket dropped and may still reconnect",
@@ -181,7 +182,7 @@ func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
 				session.DisconnectWebSocketPeer(websocket, true)
 				return nil
 			},
-			wantDestroyed: 0,
+			wantDestroyed: false,
 		},
 		{
 			name: "websocket closed",
@@ -189,14 +190,14 @@ func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
 				session.DisconnectWebSocketPeer(websocket, false)
 				return nil
 			},
-			wantDestroyed: 1,
+			wantDestroyed: true,
 		},
 		{
 			name: "session deleted",
 			leave: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
 				return manager.Delete(session.ID())
 			},
-			wantDestroyed: 1,
+			wantDestroyed: true,
 		},
 	}
 
@@ -219,7 +220,7 @@ func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
 			session.SetWebRTCPeer(peer)
 
 			if peer.destroyed != tt.wantDestroyed {
-				t.Errorf("peer destroyed %d times, want %d", peer.destroyed, tt.wantDestroyed)
+				t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
 			}
 		})
 	}
@@ -234,10 +235,10 @@ func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *test
 	tests := []struct {
 		name          string
 		connected     bool
-		wantDestroyed int
+		wantDestroyed bool
 	}{
-		{name: "websocket closes before the new peer connects", wantDestroyed: 1},
-		{name: "websocket closes while the new peer is streaming", connected: true, wantDestroyed: 0},
+		{name: "websocket closes before the new peer connects", wantDestroyed: true},
+		{name: "websocket closes while the new peer is streaming", connected: true, wantDestroyed: false},
 	}
 
 	for _, tt := range tests {
@@ -263,11 +264,11 @@ func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *test
 
 			session.DisconnectWebSocketPeer(websocket, false)
 
-			if replaced.destroyed != 1 {
-				t.Errorf("replaced peer destroyed %d times, want 1", replaced.destroyed)
+			if !replaced.destroyed {
+				t.Error("replaced peer was not destroyed")
 			}
 			if peer.destroyed != tt.wantDestroyed {
-				t.Errorf("peer destroyed %d times, want %d", peer.destroyed, tt.wantDestroyed)
+				t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
 			}
 		})
 	}
@@ -349,7 +350,7 @@ func TestWebRTCPeerOfAWebSocketThatTookOverIsKept(t *testing.T) {
 
 	session.DisconnectWebSocketPeer(websocket, false)
 
-	if peer.destroyed != 0 {
-		t.Errorf("peer destroyed %d times, want 0", peer.destroyed)
+	if peer.destroyed {
+		t.Error("peer of the websocket that took over was destroyed")
 	}
 }

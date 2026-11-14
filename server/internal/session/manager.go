@@ -160,7 +160,7 @@ func (manager *SessionManagerCtx) Delete(id string) error {
 	}
 
 	// a closing peer is cleared from another goroutine, so it can be gone already
-	if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil && session.State().IsWatching {
+	if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil {
 		webrtcPeer.Destroy()
 	}
 
@@ -184,7 +184,7 @@ func (manager *SessionManagerCtx) Disconnect(id string) error {
 	}
 
 	// a closing peer is cleared from another goroutine, so it can be gone already
-	if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil && session.State().IsWatching {
+	if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil {
 		webrtcPeer.Destroy()
 	}
 
