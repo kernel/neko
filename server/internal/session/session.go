@@ -49,13 +49,14 @@ func (session *SessionCtx) profileChanged() {
 		session.ClearHost()
 	}
 
-	if (!session.profile.CanConnect || !session.profile.CanLogin || !session.profile.CanWatch) && session.state.IsWatching {
+	if !session.profile.CanConnect || !session.profile.CanLogin || !session.profile.CanWatch {
 		// TODO: Needed for legacy implementation. Websocket must die before webrtc and deliver signal close message
 		// otherwise webrtc destroy would trigger websocket reconnect. In case of kick event, webrtc destroy is called
 		// before websocket destroy that delivers the information about the kick.
 		time.AfterFunc(time.Second, func() {
-			// the websocket destroyed below takes a peer that has not connected
-			// with it, so it can be gone by now
+			// A peer that has not connected is destroyed too, or it could
+			// still connect. There may be no peer at all, or the websocket
+			// destroyed below took one that had not connected with it.
 			if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil {
 				webrtcPeer.Destroy()
 			}

@@ -60,6 +60,11 @@ type fakeWebRTCPeer struct {
 
 func (p *fakeWebRTCPeer) Destroy() { p.destroyed = true }
 
+// A change of profile also sets the paused state of the peer.
+type pausableWebRTCPeer struct{ fakeWebRTCPeer }
+
+func (*pausableWebRTCPeer) SetPaused(isPaused bool) error { return nil }
+
 // A client can ask for media and vanish before it answers the offer. Its peer
 // never connects, so nothing but the session can end it; left alone it keeps
 // the capture pipelines it subscribed to running with nobody watching.
@@ -389,6 +394,36 @@ func TestSessionThatCountsAsWatchingWithoutAPeerCanLoseItsLogin(t *testing.T) {
 
 		// the peer is destroyed from a timer
 		time.Sleep(2 * time.Second)
+	})
+}
+
+// A session that may no longer watch keeps its websocket, so a peer that has
+// not connected is not taken with it. Left alone it could still connect, and
+// the session would watch without being allowed to.
+func TestWebRTCPeerThatNeverConnectedIsDestroyedWhenItsSessionMayNoLongerWatch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+		manager := New(&config.Session{})
+		session, _, err := manager.Create("member", profile)
+		if err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+		session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
+		peer := &pausableWebRTCPeer{}
+		session.SetWebRTCPeer(peer)
+
+		profile.CanWatch = false
+		if err := manager.Update(session.ID(), profile); err != nil {
+			t.Fatalf("update session: %v", err)
+		}
+
+		// the peer is destroyed from a timer
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+		if !peer.destroyed {
+			t.Error("peer was not destroyed")
+		}
 	})
 }
 
