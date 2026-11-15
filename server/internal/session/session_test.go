@@ -427,6 +427,54 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWhenItsSessionMayNoLongerWatch(t
 	})
 }
 
+// The peer of a session that may no longer watch is destroyed a moment later.
+// A session that may watch again by then keeps the peer it has.
+func TestWebRTCPeerIsKeptWhenItsSessionMayWatchAgain(t *testing.T) {
+	tests := []struct {
+		name      string
+		connected bool
+	}{
+		{name: "peer that has not connected"},
+		{name: "peer that is streaming", connected: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+				manager := New(&config.Session{})
+				session, _, err := manager.Create("member", profile)
+				if err != nil {
+					t.Fatalf("create session: %v", err)
+				}
+				session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
+
+				revoked := profile
+				revoked.CanWatch = false
+				if err := manager.Update(session.ID(), revoked); err != nil {
+					t.Fatalf("update session: %v", err)
+				}
+				if err := manager.Update(session.ID(), profile); err != nil {
+					t.Fatalf("update session: %v", err)
+				}
+
+				peer := &pausableWebRTCPeer{}
+				session.SetWebRTCPeer(peer)
+				if tt.connected {
+					session.SetWebRTCConnected(peer, true)
+				}
+
+				time.Sleep(2 * time.Second)
+				synctest.Wait()
+				if peer.destroyed {
+					t.Error("peer was destroyed")
+				}
+			})
+		})
+	}
+}
+
 // A client can be back on a new websocket before the old one is done leaving,
 // because the session's listeners run in between. A peer the new websocket
 // asked for is not the old one's to destroy.
