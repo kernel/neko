@@ -20,6 +20,11 @@ type listenerCountingStream struct {
 
 	mu             sync.Mutex
 	added, removed int
+
+	// When set, a listener is not added until start is closed, like one that
+	// has to wait for a capture pipeline. The first to wait closes starting.
+	starting, start chan struct{}
+	startingOnce    sync.Once
 }
 
 func (s *listenerCountingStream) ID() string { return "test" }
@@ -27,6 +32,11 @@ func (s *listenerCountingStream) ID() string { return "test" }
 func (s *listenerCountingStream) Codec() codec.RTPCodec { return s.codec }
 
 func (s *listenerCountingStream) AddListener(types.SampleListener) error {
+	if s.start != nil {
+		s.startingOnce.Do(func() { close(s.starting) })
+		<-s.start
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

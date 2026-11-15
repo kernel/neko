@@ -141,14 +141,72 @@ func TestPeerOfAClientThatLeftStopsListening(t *testing.T) {
 
 			tt.run(t, &leavingClient{capture, manager, sessions, session, websocket})
 
-			deadline := time.Now().Add(5 * time.Second)
-			for capture.listeners() != 0 || session.GetWebRTCPeer() != nil {
-				if time.Now().After(deadline) {
-					t.Fatalf("%d listeners left, peer left: %t",
-						capture.listeners(), session.GetWebRTCPeer() != nil)
-				}
-				time.Sleep(time.Millisecond)
-			}
+			waitUntilNothingListens(t, capture, session)
 		})
 	}
+}
+
+func waitUntilNothingListens(t *testing.T, capture *listenerCountingCapture, session types.Session) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for capture.listeners() != 0 || session.GetWebRTCPeer() != nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d listeners left, peer left: %t",
+				capture.listeners(), session.GetWebRTCPeer() != nil)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// The first listener of a stream starts its capture pipeline, which takes
+// seconds, and its peer is busy for that long. A session is logged out under
+// a lock that every login needs, so ending it must not wait for the pipeline.
+func TestSessionIsDeletedWithoutWaitingForItsPeerToStartAStream(t *testing.T) {
+	capture := &listenerCountingCapture{
+		audio: &listenerCountingStream{codec: codec.Opus()},
+		video: &listenerCountingStream{
+			codec:    codec.VP8(),
+			starting: make(chan struct{}),
+			start:    make(chan struct{}),
+		},
+	}
+	manager := New(nil, capture, &config.WebRTC{ICETrickle: true})
+	sessions := session.New(&config.Session{})
+
+	// metrics are registered once per session id
+	id, err := utils.NewUID(16)
+	if err != nil {
+		t.Fatalf("create session id: %v", err)
+	}
+	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+	session, _, err := sessions.Create(id, profile)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	session.ConnectWebSocketPeer(&nopWebSocketPeer{})
+
+	requested := make(chan struct{})
+	go func() {
+		defer close(requested)
+		// fails or not, depending on how far it got when the peer closed
+		_ = requestMedia(manager, session)
+	}()
+	<-capture.video.starting
+
+	deleted := make(chan error, 1)
+	go func() { deleted <- sessions.Delete(id) }()
+
+	select {
+	case err := <-deleted:
+		if err != nil {
+			t.Errorf("delete session: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("deleting the session waits for the stream to start")
+	}
+
+	close(capture.video.start)
+	<-requested
+	waitUntilNothingListens(t, capture, session)
 }

@@ -108,10 +108,26 @@ func (peer *WebRTCPeerCtx) SetCandidate(candidate webrtc.ICECandidateInit) error
 }
 
 // TODO: Add shutdown function?
+//
+// A peer that is busy is not waited for: it is closed once it is free. A peer
+// is busy for seconds while its first listener starts a capture pipeline, and
+// sessions are ended under a lock that every login needs.
 func (peer *WebRTCPeerCtx) Destroy() {
-	peer.mu.Lock()
+	if !peer.mu.TryLock() {
+		go func() {
+			peer.mu.Lock()
+			defer peer.mu.Unlock()
+
+			peer.close()
+		}()
+		return
+	}
 	defer peer.mu.Unlock()
 
+	peer.close()
+}
+
+func (peer *WebRTCPeerCtx) close() {
 	var err error
 
 	// if peer connection is not closed, close it
