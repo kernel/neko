@@ -53,61 +53,64 @@ func requestMedia(manager *WebRTCManagerCtx, session types.Session) error {
 	return peer.SetAudio(types.PeerAudioRequest{Disabled: &disabled})
 }
 
+// leavingClient is a session with a websocket on a capture of its own, so
+// that what one client leaves listening is not counted for the next.
+type leavingClient struct {
+	capture   *listenerCountingCapture
+	manager   *WebRTCManagerCtx
+	sessions  *session.SessionManagerCtx
+	session   types.Session
+	websocket types.WebSocketPeer
+}
+
+func (c *leavingClient) request(t *testing.T) {
+	t.Helper()
+	if err := requestMedia(c.manager, c.session); err != nil {
+		t.Fatalf("request media: %v", err)
+	}
+	if c.capture.listeners() == 0 {
+		t.Fatal("nothing listens after the request")
+	}
+}
+
 // A real peer is closed on its own goroutines: destroying it only starts that.
 // These clients ask for media and leave without answering the offer. In the
 // end nothing may listen to the capture streams.
 func TestPeerOfAClientThatLeftStopsListening(t *testing.T) {
-	capture := &listenerCountingCapture{
-		audio: &listenerCountingStream{codec: codec.Opus()},
-		video: &listenerCountingStream{codec: codec.VP8()},
-	}
-	manager := New(nil, capture, &config.WebRTC{ICETrickle: true})
-	sessions := session.New(&config.Session{})
-
-	request := func(t *testing.T, session types.Session) {
-		t.Helper()
-		if err := requestMedia(manager, session); err != nil {
-			t.Fatalf("request media: %v", err)
-		}
-		if capture.listeners() == 0 {
-			t.Fatal("nothing listens after the request")
-		}
-	}
-
 	tests := []struct {
 		name string
-		run  func(t *testing.T, session types.Session, websocket types.WebSocketPeer)
+		run  func(t *testing.T, c *leavingClient)
 	}{
 		{
 			name: "websocket closes after the offer",
-			run: func(t *testing.T, session types.Session, websocket types.WebSocketPeer) {
-				request(t, session)
-				session.DisconnectWebSocketPeer(websocket, false)
+			run: func(t *testing.T, c *leavingClient) {
+				c.request(t)
+				c.session.DisconnectWebSocketPeer(c.websocket, false)
 			},
 		},
 		{
 			name: "session is deleted after the offer",
-			run: func(t *testing.T, session types.Session, _ types.WebSocketPeer) {
-				request(t, session)
-				if err := sessions.Delete(session.ID()); err != nil {
+			run: func(t *testing.T, c *leavingClient) {
+				c.request(t)
+				if err := c.sessions.Delete(c.session.ID()); err != nil {
 					t.Fatalf("delete session: %v", err)
 				}
 			},
 		},
 		{
 			name: "client asks again and its websocket closes",
-			run: func(t *testing.T, session types.Session, websocket types.WebSocketPeer) {
-				request(t, session)
-				request(t, session)
-				session.DisconnectWebSocketPeer(websocket, false)
+			run: func(t *testing.T, c *leavingClient) {
+				c.request(t)
+				c.request(t)
+				c.session.DisconnectWebSocketPeer(c.websocket, false)
 			},
 		},
 		{
 			name: "websocket closes while the peer is created",
-			run: func(t *testing.T, session types.Session, websocket types.WebSocketPeer) {
-				session.DisconnectWebSocketPeer(websocket, false)
+			run: func(t *testing.T, c *leavingClient) {
+				c.session.DisconnectWebSocketPeer(c.websocket, false)
 				// the peer is closed when it is set, which fails the request
-				if err := requestMedia(manager, session); err == nil {
+				if err := requestMedia(c.manager, c.session); err == nil {
 					t.Error("request media succeeded without a websocket")
 				}
 			},
@@ -116,6 +119,13 @@ func TestPeerOfAClientThatLeftStopsListening(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			capture := &listenerCountingCapture{
+				audio: &listenerCountingStream{codec: codec.Opus()},
+				video: &listenerCountingStream{codec: codec.VP8()},
+			}
+			manager := New(nil, capture, &config.WebRTC{ICETrickle: true})
+			sessions := session.New(&config.Session{})
+
 			// metrics are registered once per session id
 			id, err := utils.NewUID(16)
 			if err != nil {
@@ -129,7 +139,7 @@ func TestPeerOfAClientThatLeftStopsListening(t *testing.T) {
 			websocket := &nopWebSocketPeer{}
 			session.ConnectWebSocketPeer(websocket)
 
-			tt.run(t, session, websocket)
+			tt.run(t, &leavingClient{capture, manager, sessions, session, websocket})
 
 			deadline := time.Now().Add(5 * time.Second)
 			for capture.listeners() != 0 || session.GetWebRTCPeer() != nil {
