@@ -159,6 +159,69 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 	}
 }
 
+// A websocket that dropped is given time to come back, and a peer that has not
+// connected is kept for that long. When the time is up the peer is destroyed,
+// unless the client is back on a new websocket by then.
+func TestWebRTCPeerThatNeverConnectedIsKeptWhileItsWebSocketMayReconnect(t *testing.T) {
+	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+
+	tests := []struct {
+		name string
+		// how long after the drop the client is back, if it comes back
+		reconnectAfter time.Duration
+		// how long after the drop the peer is looked at
+		after         time.Duration
+		wantDestroyed bool
+	}{
+		{
+			name:          "time is not up",
+			after:         WS_DELAYED_DURATION - time.Second,
+			wantDestroyed: false,
+		},
+		{
+			name:          "time is up",
+			after:         WS_DELAYED_DURATION + time.Second,
+			wantDestroyed: true,
+		},
+		{
+			name:           "client came back in time",
+			reconnectAfter: WS_DELAYED_DURATION - time.Second,
+			after:          WS_DELAYED_DURATION + time.Second,
+			wantDestroyed:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				manager := New(&config.Session{})
+				session, _, err := manager.Create("member", profile)
+				if err != nil {
+					t.Fatalf("create session: %v", err)
+				}
+				websocket := &fakeWebSocketPeer{}
+				session.ConnectWebSocketPeer(websocket)
+				// stops the timer of a delayed disconnect
+				defer session.DisconnectWebSocketPeer(websocket, false)
+				peer := &fakeWebRTCPeer{}
+				session.SetWebRTCPeer(peer)
+
+				session.DisconnectWebSocketPeer(websocket, true)
+				if tt.reconnectAfter != 0 {
+					time.Sleep(tt.reconnectAfter)
+					session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
+				}
+				time.Sleep(tt.after - tt.reconnectAfter)
+				synctest.Wait()
+
+				if peer.destroyed != tt.wantDestroyed {
+					t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
+				}
+			})
+		})
+	}
+}
+
 // Creating a peer takes a while, and the websocket that asked for it can be
 // gone by the time the peer is attached to the session. Its disconnect could
 // not destroy a peer that did not exist yet.
