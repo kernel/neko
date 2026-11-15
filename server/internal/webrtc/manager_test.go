@@ -106,7 +106,7 @@ func TestPeerOfAClientThatLeftStopsListening(t *testing.T) {
 			},
 		},
 		{
-			name: "websocket closes while the peer is created",
+			name: "websocket is gone when the peer is set",
 			run: func(t *testing.T, c *leavingClient) {
 				c.session.DisconnectWebSocketPeer(c.websocket, false)
 				// the peer is closed when it is set, which fails the request
