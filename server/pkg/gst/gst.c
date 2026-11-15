@@ -216,6 +216,12 @@ void gstreamer_pipeline_destory(GstPipelineCtx *ctx) {
   // set null state
   gst_element_set_state(GST_ELEMENT(ctx->pipeline), GST_STATE_NULL);
 
+  // the watch holds a reference to the bus, which would keep it and its
+  // control sockets after the pipeline is gone
+  GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(ctx->pipeline));
+  gst_bus_remove_watch(bus);
+  gst_object_unref(bus);
+
   if (ctx->appsink) {
     gst_object_unref(ctx->appsink);
     ctx->appsink = NULL;

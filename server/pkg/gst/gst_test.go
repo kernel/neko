@@ -1,6 +1,7 @@
 package gst
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +93,38 @@ func TestCreatePipelineReleasesLockBeforeSlowCUDAProbe(t *testing.T) {
 
 	if err := <-pipelineDone; err == nil {
 		t.Fatal("createPipeline() error = nil, want missing element error")
+	}
+}
+
+func TestDestroyClosesPipelineFiles(t *testing.T) {
+	openFiles := func() int {
+		entries, err := os.ReadDir("/proc/self/fd")
+		if err != nil {
+			t.Fatalf("count open files: %v", err)
+		}
+		return len(entries)
+	}
+
+	runPipeline := func() {
+		p, err := CreatePipeline("fakesrc num-buffers=1 ! fakesink")
+		if err != nil {
+			t.Fatalf("CreatePipeline() error = %v", err)
+		}
+		p.Play()
+		p.Destroy()
+	}
+
+	// the first pipeline opens files that GStreamer keeps for the process
+	runPipeline()
+
+	const pipelines = 10
+	before := openFiles()
+	for i := 0; i < pipelines; i++ {
+		runPipeline()
+	}
+
+	if left := openFiles() - before; left > 0 {
+		t.Fatalf("%d pipelines left %d files open", pipelines, left)
 	}
 }
 
