@@ -223,10 +223,12 @@ func (session *SessionCtx) DisconnectWebSocketPeer(websocketPeer types.WebSocket
 	}
 	session.websocketMu.Unlock()
 
-	// A WebRTC peer that has not connected yet needs this websocket to do so:
-	// it carries the answer and the candidates. Without it the peer would stay
-	// half-open for good and keep the capture pipelines it subscribed to
-	// running with nobody watching.
+	// A WebRTC peer that has not connected yet is not waited for. Until the
+	// client has answered, the peer needs this websocket to connect at all:
+	// without it the peer would stay half-open for good and keep the capture
+	// pipelines it subscribed to running with nobody watching. Once the client
+	// has answered, the peer could still connect without the websocket, but a
+	// client whose websocket is gone for good has left.
 	session.destroyPendingWebRTCPeer()
 }
 
