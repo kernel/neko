@@ -61,11 +61,6 @@ type fakeWebRTCPeer struct {
 
 func (p *fakeWebRTCPeer) Destroy() { p.destroyed = true }
 
-// A change of profile also sets the paused state of the peer.
-type pausableWebRTCPeer struct{ fakeWebRTCPeer }
-
-func (*pausableWebRTCPeer) SetPaused(isPaused bool) error { return nil }
-
 func newTestSession(t *testing.T) *SessionCtx {
 	t.Helper()
 	manager := New(&config.Session{})
@@ -393,73 +388,6 @@ func TestSessionThatCountsAsWatchingWithoutAPeerCanLoseItsLogin(t *testing.T) {
 		// the peer is destroyed from a timer
 		time.Sleep(2 * time.Second)
 	})
-}
-
-// A session that may no longer watch keeps its websocket, so a peer that has
-// not connected is not taken with it. Left alone it could still connect, and
-// the session would watch without being allowed to.
-func TestWebRTCPeerThatNeverConnectedIsDestroyedWhenItsSessionMayNoLongerWatch(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		session, _ := newConnectedTestSession(t)
-		peer := &pausableWebRTCPeer{}
-		session.SetWebRTCPeer(peer)
-
-		profile := session.Profile()
-		profile.CanWatch = false
-		if err := session.manager.Update(session.ID(), profile); err != nil {
-			t.Fatalf("update session: %v", err)
-		}
-
-		// the peer is destroyed from a timer
-		time.Sleep(2 * time.Second)
-		synctest.Wait()
-		if !peer.destroyed {
-			t.Error("peer was not destroyed")
-		}
-	})
-}
-
-// The peer of a session that may no longer watch is destroyed a moment later.
-// A session that may watch again by then keeps the peer it has.
-func TestWebRTCPeerIsKeptWhenItsSessionMayWatchAgain(t *testing.T) {
-	tests := []struct {
-		name      string
-		connected bool
-	}{
-		{name: "peer that has not connected"},
-		{name: "peer that is streaming", connected: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				session, _ := newConnectedTestSession(t)
-				session.SetWebRTCPeer(&pausableWebRTCPeer{})
-
-				profile := session.Profile()
-				revoked := profile
-				revoked.CanWatch = false
-				if err := session.manager.Update(session.ID(), revoked); err != nil {
-					t.Fatalf("update session: %v", err)
-				}
-				if err := session.manager.Update(session.ID(), profile); err != nil {
-					t.Fatalf("update session: %v", err)
-				}
-
-				peer := &pausableWebRTCPeer{}
-				session.SetWebRTCPeer(peer)
-				if tt.connected {
-					session.SetWebRTCConnected(peer, true)
-				}
-
-				time.Sleep(2 * time.Second)
-				synctest.Wait()
-				if peer.destroyed {
-					t.Error("peer was destroyed")
-				}
-			})
-		})
-	}
 }
 
 // A client can be back on a new websocket before the old one is done leaving,

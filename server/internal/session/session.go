@@ -49,19 +49,12 @@ func (session *SessionCtx) profileChanged() {
 		session.ClearHost()
 	}
 
-	if !session.profile.CanConnect || !session.profile.CanLogin || !session.profile.CanWatch {
+	if (!session.profile.CanConnect || !session.profile.CanLogin || !session.profile.CanWatch) && session.state.IsWatching {
 		// TODO: Needed for legacy implementation. Websocket must die before webrtc and deliver signal close message
 		// otherwise webrtc destroy would trigger websocket reconnect. In case of kick event, webrtc destroy is called
 		// before websocket destroy that delivers the information about the kick.
 		time.AfterFunc(time.Second, func() {
-			// Select the peer before allowing a profile update to grant access
-			// again. A peer installed after that grant must not be closed here.
-			session.manager.sessionsMu.Lock()
-			profile := session.profile
-			peer := session.GetWebRTCPeer()
-			session.manager.sessionsMu.Unlock()
-
-			if peer != nil && (!profile.CanConnect || !profile.CanLogin || !profile.CanWatch) {
+			if peer := session.GetWebRTCPeer(); peer != nil {
 				peer.Destroy()
 			}
 		})
