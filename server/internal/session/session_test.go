@@ -65,12 +65,28 @@ type pausableWebRTCPeer struct{ fakeWebRTCPeer }
 
 func (*pausableWebRTCPeer) SetPaused(isPaused bool) error { return nil }
 
+func newTestSession(t *testing.T) *SessionCtx {
+	t.Helper()
+	manager := New(&config.Session{})
+	session, _, err := manager.Create("member", types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	return session.(*SessionCtx)
+}
+
+func newConnectedTestSession(t *testing.T) (*SessionCtx, *fakeWebSocketPeer) {
+	t.Helper()
+	session := newTestSession(t)
+	websocket := &fakeWebSocketPeer{}
+	session.ConnectWebSocketPeer(websocket)
+	return session, websocket
+}
+
 // A client can ask for media and vanish before it answers the offer. Its peer
 // never connects, so nothing but the session can end it; left alone it keeps
 // the capture pipelines it subscribed to running with nobody watching.
 func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
-	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
 	tests := []struct {
 		name          string
 		connected     bool
@@ -138,13 +154,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager := New(&config.Session{})
-			session, _, err := manager.Create("member", profile)
-			if err != nil {
-				t.Fatalf("create session: %v", err)
-			}
-			websocket := &fakeWebSocketPeer{}
-			session.ConnectWebSocketPeer(websocket)
+			session, websocket := newConnectedTestSession(t)
 			// stops the timer of a delayed disconnect
 			t.Cleanup(func() { session.DisconnectWebSocketPeer(websocket, false) })
 			peer := &fakeWebRTCPeer{}
@@ -153,7 +163,7 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 				session.SetWebRTCConnected(peer, true)
 			}
 
-			if err := tt.end(manager, session, websocket); err != nil {
+			if err := tt.end(session.manager, session, websocket); err != nil {
 				t.Fatalf("end session: %v", err)
 			}
 
@@ -168,8 +178,6 @@ func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
 // connected is kept for that long. When the time is up the peer is destroyed,
 // unless the client is back on a new websocket by then.
 func TestWebRTCPeerThatNeverConnectedIsKeptWhileItsWebSocketMayReconnect(t *testing.T) {
-	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
 	tests := []struct {
 		name string
 		// how long after the drop the client is back, if it comes back
@@ -199,13 +207,7 @@ func TestWebRTCPeerThatNeverConnectedIsKeptWhileItsWebSocketMayReconnect(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				manager := New(&config.Session{})
-				session, _, err := manager.Create("member", profile)
-				if err != nil {
-					t.Fatalf("create session: %v", err)
-				}
-				websocket := &fakeWebSocketPeer{}
-				session.ConnectWebSocketPeer(websocket)
+				session, websocket := newConnectedTestSession(t)
 				// stops the timer of a delayed disconnect
 				defer session.DisconnectWebSocketPeer(websocket, false)
 				peer := &fakeWebRTCPeer{}
@@ -231,8 +233,6 @@ func TestWebRTCPeerThatNeverConnectedIsKeptWhileItsWebSocketMayReconnect(t *test
 // gone by the time the peer is attached to the session. Its disconnect could
 // not destroy a peer that did not exist yet.
 func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
-	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
 	tests := []struct {
 		name          string
 		leave         func(manager *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error
@@ -272,17 +272,11 @@ func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager := New(&config.Session{})
-			session, _, err := manager.Create("member", profile)
-			if err != nil {
-				t.Fatalf("create session: %v", err)
-			}
-			websocket := &fakeWebSocketPeer{}
-			session.ConnectWebSocketPeer(websocket)
+			session, websocket := newConnectedTestSession(t)
 			// stops the timer of a delayed disconnect
 			t.Cleanup(func() { session.DisconnectWebSocketPeer(websocket, false) })
 
-			if err := tt.leave(manager, session, websocket); err != nil {
+			if err := tt.leave(session.manager, session, websocket); err != nil {
 				t.Fatalf("leave: %v", err)
 			}
 			peer := &fakeWebRTCPeer{}
@@ -299,8 +293,6 @@ func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
 // The session goes on counting as watching, because the closing of a replaced
 // peer is ignored, but the new peer has not connected.
 func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *testing.T) {
-	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
 	tests := []struct {
 		name          string
 		connected     bool
@@ -312,13 +304,7 @@ func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *test
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager := New(&config.Session{})
-			session, _, err := manager.Create("member", profile)
-			if err != nil {
-				t.Fatalf("create session: %v", err)
-			}
-			websocket := &fakeWebSocketPeer{}
-			session.ConnectWebSocketPeer(websocket)
+			session, websocket := newConnectedTestSession(t)
 			replaced := &fakeWebRTCPeer{}
 			session.SetWebRTCPeer(replaced)
 			session.SetWebRTCConnected(replaced, true)
@@ -347,8 +333,6 @@ func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *test
 // that is deleted or disconnected at that moment can still count as watching
 // with no peer left to destroy.
 func TestSessionThatCountsAsWatchingWithoutAPeerCanBeEnded(t *testing.T) {
-	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
 	tests := []struct {
 		name string
 		end  func(manager *SessionManagerCtx, id string) error
@@ -359,14 +343,10 @@ func TestSessionThatCountsAsWatchingWithoutAPeerCanBeEnded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager := New(&config.Session{})
-			session, _, err := manager.Create("member", profile)
-			if err != nil {
-				t.Fatalf("create session: %v", err)
-			}
-			session.(*SessionCtx).state.IsWatching = true
+			session := newTestSession(t)
+			session.state.IsWatching = true
 
-			if err := tt.end(manager, session.ID()); err != nil {
+			if err := tt.end(session.manager, session.ID()); err != nil {
 				t.Fatalf("end session: %v", err)
 			}
 		})
@@ -378,17 +358,12 @@ func TestSessionThatCountsAsWatchingWithoutAPeerCanBeEnded(t *testing.T) {
 // so a session that counts as watching can have no peer left by then.
 func TestSessionThatCountsAsWatchingWithoutAPeerCanLoseItsLogin(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+		session := newTestSession(t)
+		session.state.IsWatching = true
 
-		manager := New(&config.Session{})
-		session, _, err := manager.Create("member", profile)
-		if err != nil {
-			t.Fatalf("create session: %v", err)
-		}
-		session.(*SessionCtx).state.IsWatching = true
-
+		profile := session.Profile()
 		profile.CanLogin = false
-		if err := manager.Update(session.ID(), profile); err != nil {
+		if err := session.manager.Update(session.ID(), profile); err != nil {
 			t.Fatalf("update session: %v", err)
 		}
 
@@ -402,19 +377,13 @@ func TestSessionThatCountsAsWatchingWithoutAPeerCanLoseItsLogin(t *testing.T) {
 // the session would watch without being allowed to.
 func TestWebRTCPeerThatNeverConnectedIsDestroyedWhenItsSessionMayNoLongerWatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
-		manager := New(&config.Session{})
-		session, _, err := manager.Create("member", profile)
-		if err != nil {
-			t.Fatalf("create session: %v", err)
-		}
-		session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
+		session, _ := newConnectedTestSession(t)
 		peer := &pausableWebRTCPeer{}
 		session.SetWebRTCPeer(peer)
 
+		profile := session.Profile()
 		profile.CanWatch = false
-		if err := manager.Update(session.ID(), profile); err != nil {
+		if err := session.manager.Update(session.ID(), profile); err != nil {
 			t.Fatalf("update session: %v", err)
 		}
 
@@ -441,21 +410,16 @@ func TestWebRTCPeerIsKeptWhenItsSessionMayWatchAgain(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
+				session, _ := newConnectedTestSession(t)
+				session.SetWebRTCPeer(&pausableWebRTCPeer{})
 
-				manager := New(&config.Session{})
-				session, _, err := manager.Create("member", profile)
-				if err != nil {
-					t.Fatalf("create session: %v", err)
-				}
-				session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
-
+				profile := session.Profile()
 				revoked := profile
 				revoked.CanWatch = false
-				if err := manager.Update(session.ID(), revoked); err != nil {
+				if err := session.manager.Update(session.ID(), revoked); err != nil {
 					t.Fatalf("update session: %v", err)
 				}
-				if err := manager.Update(session.ID(), profile); err != nil {
+				if err := session.manager.Update(session.ID(), profile); err != nil {
 					t.Fatalf("update session: %v", err)
 				}
 
@@ -479,18 +443,10 @@ func TestWebRTCPeerIsKeptWhenItsSessionMayWatchAgain(t *testing.T) {
 // because the session's listeners run in between. A peer the new websocket
 // asked for is not the old one's to destroy.
 func TestWebRTCPeerOfAWebSocketThatTookOverIsKept(t *testing.T) {
-	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
-	manager := New(&config.Session{})
-	session, _, err := manager.Create("member", profile)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	websocket := &fakeWebSocketPeer{}
-	session.ConnectWebSocketPeer(websocket)
+	session, websocket := newConnectedTestSession(t)
 
 	peer := &fakeWebRTCPeer{}
-	manager.OnDisconnected(func(session types.Session) {
+	session.manager.OnDisconnected(func(session types.Session) {
 		session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
 		session.SetWebRTCPeer(peer)
 	})
@@ -505,16 +461,7 @@ func TestWebRTCPeerOfAWebSocketThatTookOverIsKept(t *testing.T) {
 // The new websocket can also connect after the old one was cleared from the
 // session, and ask for a peer before the old one looks for a peer to destroy.
 func TestWebRTCPeerOfAWebSocketThatConnectedAfterTheOldOneWasClearedIsKept(t *testing.T) {
-	profile := types.MemberProfile{CanLogin: true, CanConnect: true, CanWatch: true}
-
-	manager := New(&config.Session{})
-	created, _, err := manager.Create("member", profile)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	session := created.(*SessionCtx)
-	websocket := &fakeWebSocketPeer{}
-	session.ConnectWebSocketPeer(websocket)
+	session, websocket := newConnectedTestSession(t)
 
 	// holds the old websocket where it looks for a peer to destroy
 	session.webrtcMu.Lock()

@@ -54,21 +54,15 @@ func (session *SessionCtx) profileChanged() {
 		// otherwise webrtc destroy would trigger websocket reconnect. In case of kick event, webrtc destroy is called
 		// before websocket destroy that delivers the information about the kick.
 		time.AfterFunc(time.Second, func() {
-			// The profile can change again before the timer fires. A peer of
-			// a session that may watch again is not this timer's to destroy.
+			// Select the peer before allowing a profile update to grant access
+			// again. A peer installed after that grant must not be closed here.
 			session.manager.sessionsMu.Lock()
 			profile := session.profile
+			peer := session.GetWebRTCPeer()
 			session.manager.sessionsMu.Unlock()
 
-			if profile.CanConnect && profile.CanLogin && profile.CanWatch {
-				return
-			}
-
-			// A peer that has not connected is destroyed too, or it could
-			// still connect. There may be no peer at all, or the websocket
-			// destroyed below took one that had not connected with it.
-			if webrtcPeer := session.GetWebRTCPeer(); webrtcPeer != nil {
-				webrtcPeer.Destroy()
+			if peer != nil && (!profile.CanConnect || !profile.CanLogin || !profile.CanWatch) {
+				peer.Destroy()
 			}
 		})
 	}
