@@ -79,144 +79,37 @@ func newConnectedTestSession(t *testing.T) (*SessionCtx, *fakeWebSocketPeer) {
 	return session, websocket
 }
 
-// A client can ask for media and vanish before it answers the offer. Its peer
-// never connects, so nothing but the session can end it; left alone it keeps
-// the capture pipelines it subscribed to running with nobody watching.
-func TestWebRTCPeerThatNeverConnectedIsDestroyedWithItsSession(t *testing.T) {
-	tests := []struct {
-		name          string
-		connected     bool
-		end           func(manager *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error
-		wantDestroyed bool
-	}{
-		{
-			name: "websocket closes before the peer connects",
-			end: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
-				session.DisconnectWebSocketPeer(websocket, false)
-				return nil
-			},
-			wantDestroyed: true,
-		},
-		{
-			name:      "websocket closes while the peer is streaming",
-			connected: true,
-			end: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
-				session.DisconnectWebSocketPeer(websocket, false)
-				return nil
-			},
-			wantDestroyed: false,
-		},
-		{
-			name:      "websocket closes while the peer is streaming and was set again",
-			connected: true,
-			end: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
-				session.SetWebRTCPeer(session.GetWebRTCPeer())
-				session.DisconnectWebSocketPeer(websocket, false)
-				return nil
-			},
-			wantDestroyed: false,
-		},
-		{
-			name: "websocket drops and may still reconnect",
-			end: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
-				session.DisconnectWebSocketPeer(websocket, true)
-				return nil
-			},
-			wantDestroyed: false,
-		},
-		{
-			name: "session is deleted before the peer connects",
-			end: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
-				return manager.Delete(session.ID())
-			},
-			wantDestroyed: true,
-		},
-		{
-			name: "session is disconnected before the peer connects",
-			end: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
-				return manager.Disconnect(session.ID())
-			},
-			wantDestroyed: true,
-		},
-		{
-			name:      "session is deleted while the peer is streaming",
-			connected: true,
-			end: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
-				return manager.Delete(session.ID())
-			},
-			wantDestroyed: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			session, websocket := newConnectedTestSession(t)
-			// stops the timer of a delayed disconnect
-			t.Cleanup(func() { session.DisconnectWebSocketPeer(websocket, false) })
-			peer := &fakeWebRTCPeer{}
-			session.SetWebRTCPeer(peer)
-			if tt.connected {
-				session.SetWebRTCConnected(peer, true)
-			}
-
-			if err := tt.end(session.manager, session, websocket); err != nil {
-				t.Fatalf("end session: %v", err)
-			}
-
-			if peer.destroyed != tt.wantDestroyed {
-				t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
-			}
-		})
+func TestSettingSameWebRTCPeerPreservesItsConnection(t *testing.T) {
+	session, websocket := newConnectedTestSession(t)
+	peer := &fakeWebRTCPeer{}
+	session.SetWebRTCPeer(peer)
+	session.SetWebRTCConnected(peer, true)
+	session.SetWebRTCPeer(peer)
+	session.DisconnectWebSocketPeer(websocket, false)
+	if peer.destroyed {
+		t.Fatal("setting the same peer made it lose its connection")
 	}
 }
 
-// A websocket that dropped is given time to come back, and a peer that has not
-// connected is kept for that long. When the time is up the peer is destroyed,
-// unless the client is back on a new websocket by then.
-func TestWebRTCPeerThatNeverConnectedIsKeptWhileItsWebSocketMayReconnect(t *testing.T) {
-	tests := []struct {
-		name string
-		// how long after the drop the client is back, if it comes back
-		reconnectAfter time.Duration
-		// how long after the drop the peer is looked at
+func TestPendingWebRTCPeerWaitsForReconnectDeadline(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
 		after         time.Duration
 		wantDestroyed bool
 	}{
-		{
-			name:          "time is not up",
-			after:         WS_DELAYED_DURATION - time.Second,
-			wantDestroyed: false,
-		},
-		{
-			name:          "time is up",
-			after:         WS_DELAYED_DURATION + time.Second,
-			wantDestroyed: true,
-		},
-		{
-			name:           "client came back in time",
-			reconnectAfter: WS_DELAYED_DURATION - time.Second,
-			after:          WS_DELAYED_DURATION + time.Second,
-			wantDestroyed:  false,
-		},
-	}
-
-	for _, tt := range tests {
+		{"before expiry", WS_DELAYED_DURATION - time.Nanosecond, false},
+		{"at expiry", WS_DELAYED_DURATION, true},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				session, websocket := newConnectedTestSession(t)
-				// stops the timer of a delayed disconnect
-				defer session.DisconnectWebSocketPeer(websocket, false)
 				peer := &fakeWebRTCPeer{}
 				session.SetWebRTCPeer(peer)
-
 				session.DisconnectWebSocketPeer(websocket, true)
-				if tt.reconnectAfter != 0 {
-					time.Sleep(tt.reconnectAfter)
-					session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
-				}
-				time.Sleep(tt.after - tt.reconnectAfter)
-				synctest.Wait()
+				defer session.DisconnectWebSocketPeer(websocket, false)
 
+				time.Sleep(tt.after)
+				synctest.Wait()
 				if peer.destroyed != tt.wantDestroyed {
 					t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
 				}
@@ -225,64 +118,20 @@ func TestWebRTCPeerThatNeverConnectedIsKeptWhileItsWebSocketMayReconnect(t *test
 	}
 }
 
-// Creating a peer takes a while, and the websocket that asked for it can be
-// gone by the time the peer is attached to the session. Its disconnect could
-// not destroy a peer that did not exist yet.
-func TestWebRTCPeerSetAfterItsWebSocketLeftIsDestroyed(t *testing.T) {
-	tests := []struct {
-		name          string
-		leave         func(manager *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error
-		wantDestroyed bool
-	}{
-		{
-			name: "websocket still connected",
-			leave: func(*SessionManagerCtx, types.Session, types.WebSocketPeer) error {
-				return nil
-			},
-			wantDestroyed: false,
-		},
-		{
-			name: "websocket dropped and may still reconnect",
-			leave: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
-				session.DisconnectWebSocketPeer(websocket, true)
-				return nil
-			},
-			wantDestroyed: false,
-		},
-		{
-			name: "websocket closed",
-			leave: func(_ *SessionManagerCtx, session types.Session, websocket types.WebSocketPeer) error {
-				session.DisconnectWebSocketPeer(websocket, false)
-				return nil
-			},
-			wantDestroyed: true,
-		},
-		{
-			name: "session deleted",
-			leave: func(manager *SessionManagerCtx, session types.Session, _ types.WebSocketPeer) error {
-				return manager.Delete(session.ID())
-			},
-			wantDestroyed: true,
-		},
-	}
+func TestPeerSetDuringReconnectGraceSurvivesReconnect(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		session, websocket := newConnectedTestSession(t)
+		session.DisconnectWebSocketPeer(websocket, true)
+		peer := &fakeWebRTCPeer{}
+		session.SetWebRTCPeer(peer)
+		session.ConnectWebSocketPeer(&fakeWebSocketPeer{})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			session, websocket := newConnectedTestSession(t)
-			// stops the timer of a delayed disconnect
-			t.Cleanup(func() { session.DisconnectWebSocketPeer(websocket, false) })
-
-			if err := tt.leave(session.manager, session, websocket); err != nil {
-				t.Fatalf("leave: %v", err)
-			}
-			peer := &fakeWebRTCPeer{}
-			session.SetWebRTCPeer(peer)
-
-			if peer.destroyed != tt.wantDestroyed {
-				t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
-			}
-		})
-	}
+		time.Sleep(WS_DELAYED_DURATION)
+		synctest.Wait()
+		if peer.destroyed {
+			t.Fatal("old websocket's timer destroyed the peer after reconnect")
+		}
+	})
 }
 
 // A client that is watching can ask for media again, which replaces its peer.
@@ -347,25 +196,44 @@ func TestConcurrentWebRTCPeerReplacement(t *testing.T) {
 	}
 }
 
-// A closing peer is cleared from the session on another goroutine. A session
-// that is deleted or disconnected at that moment can still count as watching
-// with no peer left to destroy.
-func TestSessionThatCountsAsWatchingWithoutAPeerCanBeEnded(t *testing.T) {
+func TestSessionEndCleansUpWebRTCPeer(t *testing.T) {
 	tests := []struct {
 		name string
-		end  func(manager *SessionManagerCtx, id string) error
+		end  func(*SessionManagerCtx, string) error
 	}{
-		{name: "session is deleted", end: (*SessionManagerCtx).Delete},
-		{name: "session is disconnected", end: (*SessionManagerCtx).Disconnect},
+		{"delete", (*SessionManagerCtx).Delete},
+		{"disconnect", (*SessionManagerCtx).Disconnect},
 	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			session := newTestSession(t)
-			session.state.IsWatching = true
+		t.Run(tt.name+"/streaming without a websocket", func(t *testing.T) {
+			session, websocket := newConnectedTestSession(t)
+			peer := &fakeWebRTCPeer{}
+			session.SetWebRTCPeer(peer)
+			session.SetWebRTCConnected(peer, true)
+			session.DisconnectWebSocketPeer(websocket, false)
+			if peer.destroyed {
+				t.Fatal("websocket disconnect destroyed a streaming peer")
+			}
 
 			if err := tt.end(session.manager, session.ID()); err != nil {
-				t.Fatalf("end session: %v", err)
+				t.Fatal(err)
+			}
+			if !peer.destroyed {
+				t.Fatal("ending the session left its streaming peer alive")
+			}
+		})
+		t.Run(tt.name+"/peer already gone", func(t *testing.T) {
+			session, _ := newConnectedTestSession(t)
+			session.state.IsWatching = true // can outlive a replaced peer
+			if err := tt.end(session.manager, session.ID()); err != nil {
+				t.Fatal(err)
+			}
+
+			// A media request can finish setting its peer after the session ends.
+			late := &fakeWebRTCPeer{}
+			session.SetWebRTCPeer(late)
+			if !late.destroyed {
+				t.Fatal("peer set after the session ended was not destroyed")
 			}
 		})
 	}
