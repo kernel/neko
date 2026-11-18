@@ -297,17 +297,19 @@ func (session *SessionCtx) Send(event string, payload any) {
 // webrtc
 // ---
 
-// Set webrtc peer and destroy the old one, if there is old one.
+// SetWebRTCPeer sets the current peer and destroys the one it replaced.
 func (session *SessionCtx) SetWebRTCPeer(webrtcPeer types.WebRTCPeer) {
 	session.webrtcMu.Lock()
-	if webrtcPeer != session.webrtcPeer {
+	oldPeer := session.webrtcPeer
+	changed := oldPeer != webrtcPeer
+	if changed {
+		session.webrtcPeer = webrtcPeer
 		session.webrtcConnected = false
 	}
-	session.webrtcPeer, webrtcPeer = webrtcPeer, session.webrtcPeer
 	session.webrtcMu.Unlock()
 
-	if webrtcPeer != nil && webrtcPeer != session.webrtcPeer {
-		webrtcPeer.Destroy()
+	if changed && oldPeer != nil {
+		oldPeer.Destroy()
 	}
 
 	// The websocket can go away while a peer is being created for it. Its

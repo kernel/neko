@@ -2,6 +2,7 @@ package session
 
 import (
 	"runtime"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -326,6 +327,28 @@ func TestWebRTCPeerThatReplacedAStreamingOneIsDestroyedUnlessItConnected(t *test
 				t.Errorf("peer destroyed = %t, want %t", peer.destroyed, tt.wantDestroyed)
 			}
 		})
+	}
+}
+
+func TestConcurrentWebRTCPeerReplacement(t *testing.T) {
+	session, _ := newConnectedTestSession(t)
+	peers := []*fakeWebRTCPeer{{}, {}, {}}
+	session.SetWebRTCPeer(peers[0])
+
+	var wg sync.WaitGroup
+	for _, peer := range peers[1:] {
+		wg.Go(func() { session.SetWebRTCPeer(peer) })
+	}
+	wg.Wait()
+
+	current := session.GetWebRTCPeer()
+	if current != peers[1] && current != peers[2] {
+		t.Fatal("neither replacement is the current peer")
+	}
+	for i, peer := range peers {
+		if want := peer != current; peer.destroyed != want {
+			t.Errorf("peer %d destroyed = %t, want %t", i, peer.destroyed, want)
+		}
 	}
 }
 
