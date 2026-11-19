@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -164,4 +165,63 @@ func connect(t *testing.T, sm types.SessionManager, id string) (types.Session, t
 	p := &mockWebsocketPeer{}
 	s.ConnectWebSocketPeer(p)
 	return s, p
+}
+
+func TestManager_ReportsLiveViewFailure(t *testing.T) {
+	srv, captured := newCapturingServer(t)
+	defer srv.Close()
+
+	sm := newSessionManager(t)
+	m := NewManager(sm, &Config{Enabled: true, Endpoint: srv.URL})
+	require.NoError(t, m.Start())
+	defer func() { require.NoError(t, m.Shutdown()) }()
+
+	m.reportLiveViewFailure("session-1", codeGPUEncoderUnavailable, `(pipeline error) no element "nvh264enc"`)
+
+	require.Eventually(t, func() bool {
+		return len(captured.snapshot()) >= 1
+	}, 2*time.Second, 10*time.Millisecond, "expected a failure event")
+
+	ev := captured.snapshot()[0]
+	require.Equal(t, "live_view_failed", ev.Type)
+	require.Equal(t, "connection", ev.Category)
+	require.Equal(t, "local_process", ev.Source.Kind)
+	require.Equal(t, "neko.live_view.pipeline_failed", ev.Source.Event)
+	require.Equal(t, "session-1", ev.Data["session_id"])
+	require.Equal(t, codeGPUEncoderUnavailable, ev.Data["code"])
+	require.NotEmpty(t, ev.Data["message"])
+}
+
+func TestReportLiveViewFailure_WithoutReporter(t *testing.T) {
+	setReporter(nil)
+
+	require.NotPanics(t, func() {
+		ReportLiveViewFailure("session-1", errors.New(`(pipeline error) no element "nvh264enc"`))
+	})
+	require.NotPanics(t, func() {
+		ReportLiveViewFailure("", errors.New("pipeline failed"))
+	})
+	require.NotPanics(t, func() {
+		ReportLiveViewFailure("session-1", nil)
+	})
+}
+
+func TestClassifyPipelineError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"missing encoder element", errors.New(`(pipeline error) no element "nvh264enc"`), codeGPUEncoderUnavailable},
+		{"cuda context", errors.New("failed to create cuda context, ret: 0x2"), codeGPUEncoderUnavailable},
+		{"plugin load", errors.New("element plugin couldn't be loaded"), codeGPUEncoderUnavailable},
+		{"other pipeline failure", errors.New("webrtc stream not found"), codePipelineFailed},
+		{"no error", nil, codePipelineFailed},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, classifyPipelineError(c.err))
+		})
+	}
 }
