@@ -104,7 +104,15 @@ func (peer *WebRTCPeerCtx) SetCandidate(candidate webrtc.ICECandidateInit) error
 	peer.mu.Lock()
 	defer peer.mu.Unlock()
 
-	return peer.connection.AddICECandidate(candidate)
+	summary := summarizeICECandidate(candidate.Candidate)
+	logICECandidate(peer.logger.Info(), "remote", summary).Msg("received remote ice candidate")
+
+	if err := peer.connection.AddICECandidate(candidate); err != nil {
+		logICECandidate(peer.logger.Warn().Err(err), "remote", summary).Msg("failed to add remote ice candidate")
+		return err
+	}
+
+	return nil
 }
 
 // TODO: Add shutdown function?
