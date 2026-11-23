@@ -375,6 +375,22 @@ func (s *session) wsToBackend(msg []byte) error {
 			},
 		}, nil)
 
+	case event.BENCHMARK_WEBRTC_STATS:
+		// Forward benchmark stats directly to backend without translation
+		// This handles case where new client connects through legacy endpoint
+		var wsMsg types.WebSocketMessage
+		err := json.Unmarshal(msg, &wsMsg)
+		if err != nil {
+			return err
+		}
+
+		var payload message.BenchmarkWebRTCStats
+		err = json.Unmarshal(wsMsg.Payload, &payload)
+		if err != nil {
+			return err
+		}
+		return s.toBackend(event.BENCHMARK_WEBRTC_STATS, &payload)
+
 	default:
 		return fmt.Errorf("unknown event type: %s", header.Event)
 	}

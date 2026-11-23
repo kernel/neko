@@ -1,13 +1,19 @@
 package event
 
 const (
-	SYSTEM_INIT       = "system/init"
-	SYSTEM_ADMIN      = "system/admin"
-	SYSTEM_SETTINGS   = "system/settings"
-	SYSTEM_LOGS       = "system/logs"
-	SYSTEM_DISCONNECT = "system/disconnect"
-	SYSTEM_HEARTBEAT  = "system/heartbeat"
-	SYSTEM_PONG       = "system/pong"
+	SYSTEM_INIT              = "system/init"
+	SYSTEM_ADMIN             = "system/admin"
+	SYSTEM_SETTINGS          = "system/settings"
+	SYSTEM_LOGS              = "system/logs"
+	SYSTEM_DISCONNECT        = "system/disconnect"
+	SYSTEM_HEARTBEAT         = "system/heartbeat"
+	SYSTEM_PONG              = "system/pong"
+	SYSTEM_BENCHMARK_COLLECT = "system/benchmark_collect"
+	SYSTEM_BENCHMARK_READY   = "system/benchmark_ready"
+)
+
+const (
+	BENCHMARK_WEBRTC_STATS = "benchmark/webrtc_stats"
 )
 
 const (

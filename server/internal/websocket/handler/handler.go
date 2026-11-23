@@ -192,6 +192,14 @@ func (h *MessageHandlerCtx) Message(session types.Session, data types.WebSocketM
 		err = utils.Unmarshal(payload, data.Payload, func() error {
 			return h.sendBroadcast(session, payload)
 		})
+
+	// Benchmark Events
+	case event.BENCHMARK_WEBRTC_STATS:
+		payload := &message.BenchmarkWebRTCStats{}
+		err = utils.Unmarshal(payload, data.Payload, func() error {
+			return h.benchmarkWebRTCStats(session, payload)
+		})
+
 	default:
 		err = h.systemPong(session)
 		return false

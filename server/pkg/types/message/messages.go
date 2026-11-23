@@ -52,6 +52,11 @@ type SystemPong struct {
 	Timestamp int64 `json:"timestamp"` // Unix ms
 }
 
+// SystemBenchmarkReady is sent when benchmark collection is complete
+type SystemBenchmarkReady struct {
+	Timestamp int64 `json:"timestamp"` // Unix ms
+}
+
 /////////////////////////////
 // Signal
 /////////////////////////////
@@ -214,4 +219,81 @@ type SendBroadcast struct {
 	Sender  string `json:"sender"`
 	Subject string `json:"subject"`
 	Body    any    `json:"body"`
+}
+
+/////////////////////////////
+// Benchmark
+/////////////////////////////
+
+type BenchmarkWebRTCStats struct {
+	Timestamp          string                          `json:"timestamp"`
+	ConnectionState    string                          `json:"connection_state"`
+	IceConnectionState string                          `json:"ice_connection_state"`
+	FrameRateFPS       BenchmarkFrameRateMetrics       `json:"frame_rate_fps"`
+	FrameLatencyMS     BenchmarkLatencyMetrics         `json:"frame_latency_ms"`
+	BitrateKbps        BenchmarkBitrateMetrics         `json:"bitrate_kbps"`
+	Packets            BenchmarkPacketMetrics          `json:"packets"`
+	Frames             BenchmarkFrameMetrics           `json:"frames"`
+	JitterMS           BenchmarkJitterMetrics          `json:"jitter_ms"`
+	Network            BenchmarkNetworkMetrics         `json:"network"`
+	Codecs             BenchmarkCodecMetrics           `json:"codecs"`
+	Resolution         BenchmarkResolutionMetrics      `json:"resolution"`
+	ConcurrentViewers  int                             `json:"concurrent_viewers"`
+}
+
+type BenchmarkFrameRateMetrics struct {
+	Target   float64 `json:"target"`
+	Achieved float64 `json:"achieved"`
+	Min      float64 `json:"min"`
+	Max      float64 `json:"max"`
+}
+
+type BenchmarkLatencyMetrics struct {
+	P50 float64 `json:"p50"`
+	P95 float64 `json:"p95"`
+	P99 float64 `json:"p99"`
+}
+
+type BenchmarkBitrateMetrics struct {
+	Video float64 `json:"video"`
+	Audio float64 `json:"audio"`
+	Total float64 `json:"total"`
+}
+
+type BenchmarkPacketMetrics struct {
+	VideoReceived int64   `json:"video_received"`
+	VideoLost     int64   `json:"video_lost"`
+	AudioReceived int64   `json:"audio_received"`
+	AudioLost     int64   `json:"audio_lost"`
+	LossPercent   float64 `json:"loss_percent"`
+}
+
+type BenchmarkFrameMetrics struct {
+	Received        int64 `json:"received"`
+	Dropped         int64 `json:"dropped"`
+	Decoded         int64 `json:"decoded"`
+	Corrupted       int64 `json:"corrupted"`
+	KeyFramesDecoded int64 `json:"key_frames_decoded"`
+}
+
+type BenchmarkJitterMetrics struct {
+	Video float64 `json:"video"`
+	Audio float64 `json:"audio"`
+}
+
+type BenchmarkNetworkMetrics struct {
+	RTTMS                      float64 `json:"rtt_ms"`
+	AvailableOutgoingBitrateKbps float64 `json:"available_outgoing_bitrate_kbps"`
+	BytesReceived              int64   `json:"bytes_received"`
+	BytesSent                  int64   `json:"bytes_sent"`
+}
+
+type BenchmarkCodecMetrics struct {
+	Video string `json:"video"`
+	Audio string `json:"audio"`
+}
+
+type BenchmarkResolutionMetrics struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
