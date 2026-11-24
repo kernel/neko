@@ -479,6 +479,14 @@ func (s *session) wsToClient(msg []byte) error {
 			Data:  string(json),
 		})
 
+	case event.SIGNAL_CLOSE:
+		// The server destroyed the client's peer while the websocket stays open.
+		// The legacy protocol has no such event, so without this the client keeps
+		// showing a stream that no longer exists.
+		return s.toClient(&oldMessage.Message{
+			Event: oldEvent.SIGNAL_CLOSE,
+		})
+
 	case event.SIGNAL_PROVIDE:
 		request := &message.SignalProvide{}
 		err := json.Unmarshal(data.Payload, request)
