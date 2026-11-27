@@ -28,7 +28,8 @@ func (manager *DesktopManagerCtx) Scroll(deltaX, deltaY int, controlKey bool) {
 		}
 		if err := manager.input.Scroll(int32(deltaX), int32(deltaY)); err != nil {
 			manager.logger.Warn().Err(err).Msg("xinput scroll failed, falling back to XTest")
-			xorg.Scroll(deltaX, deltaY, false)
+			// the driver's deltas are scroll units, not wheel clicks
+			xorg.ScrollUnits(deltaX, deltaY, controlKey)
 		}
 	} else {
 		// XTest fallback — handles controlKey atomically under a single X11 lock
